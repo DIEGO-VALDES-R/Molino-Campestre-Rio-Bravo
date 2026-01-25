@@ -1,0 +1,7 @@
+{
+  "name": "Gestor Financiero Familiar",
+  "description": "Una aplicación completa para la gestión de negocios familiares con control de ingresos, egresos, notas y análisis inteligente.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
