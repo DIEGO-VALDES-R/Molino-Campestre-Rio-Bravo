@@ -330,37 +330,51 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
                     <th className="px-6 py-4">Lote</th>
                     <th className="px-6 py-4 text-right">Valor Lote</th>
                     <th className="px-6 py-4 text-right">Depósito</th>
-                    <th className="px-6 py-4 text-right">Saldo</th>
+                    <th className="px-6 py-4 text-right">Total Pagado</th>
+                    <th className="px-6 py-4 text-right">Saldo Pendiente</th>
                     <th className="px-6 py-4">Estado</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {clientesActuales.slice(0, 5).map((cliente) => (
-                    <tr key={cliente.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 font-medium text-slate-900">{cliente.nombre}</td>
-                      <td className="px-6 py-4">#{cliente.numeroLote}</td>
-                      <td className="px-6 py-4 text-right font-semibold">${cliente.valorLote?.toLocaleString() || 0}</td>
-                      <td className="px-6 py-4 text-right font-semibold text-emerald-600">
-                        ${cliente.depositoInicial?.toLocaleString() || 0}
-                      </td>
-                      <td className="px-6 py-4 text-right font-semibold text-orange-600">
-                        ${cliente.saldoRestante?.toLocaleString() || 0}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            cliente.estado === 'pagado'
-                              ? 'bg-green-100 text-green-800'
-                              : cliente.estado === 'mora'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}
-                        >
-                          {cliente.estado}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {clientesActuales.slice(0, 5).map((cliente) => {
+                    // Calcular total pagado para este cliente
+                    const totalPagadoCliente = pagosClientes
+                      .filter(p => p.clienteId === cliente.id)
+                      .reduce((acc, p) => acc + (p.monto || 0), 0);
+                    
+                    // Calcular saldo pendiente: Valor - Depósito - Pagos
+                    const saldoPendiente = (cliente.valorLote || 0) - (cliente.depositoInicial || 0) - totalPagadoCliente;
+                    
+                    return (
+                      <tr key={cliente.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4 font-medium text-slate-900">{cliente.nombre}</td>
+                        <td className="px-6 py-4">#{cliente.numeroLote}</td>
+                        <td className="px-6 py-4 text-right font-semibold">${cliente.valorLote?.toLocaleString() || 0}</td>
+                        <td className="px-6 py-4 text-right font-semibold text-emerald-600">
+                          ${cliente.depositoInicial?.toLocaleString() || 0}
+                        </td>
+                        <td className="px-6 py-4 text-right font-semibold text-blue-600">
+                          ${totalPagadoCliente.toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4 text-right font-semibold text-orange-600">
+                          ${Math.max(0, saldoPendiente).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              cliente.estado === 'pagado'
+                                ? 'bg-green-100 text-green-800'
+                                : cliente.estado === 'mora'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}
+                          >
+                            {cliente.estado}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
