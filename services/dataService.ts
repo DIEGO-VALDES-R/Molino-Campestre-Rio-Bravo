@@ -13,34 +13,57 @@ export const fileToBase64 = (file: File): Promise<string> => {
 
 // --- Fetch Data ---
 
-export const fetchAllData = async () => {
+export const fetchAllData = async (pageSize = 100, offset = 0) => {
   try {
     const [txRes, notesRes, usersRes, docsRes, logsRes] = await Promise.all([
       supabase.from('transactions').select('*').order('date', { ascending: false }),
       supabase.from('notes').select('*').order('created_at', { ascending: false }),
       supabase.from('users').select('*'),
       supabase.from('documents').select('*').order('uploaded_at', { ascending: false }),
-      supabase.from('audit_logs').select('*').order('date', { ascending: false }).limit(100),
+      supabase
+        .from('audit_logs')
+        .select('*', { count: 'exact' })
+        .order('date', { ascending: false })
+        .range(offset, offset + pageSize - 1),
     ]);
 
     return {
       transactions: (txRes.data as Transaction[]) || [],
-      notes: (notesRes.data as any[] || []).map(n => ({...n, createdAt: n.created_at})), // map snake_case to camelCase if needed, but keeping simple
+      notes: (notesRes.data as any[] || []).map(n => ({...n, createdAt: n.created_at})), 
       users: (usersRes.data as User[]) || [],
-      documents: (docsRes.data as any[] || []).map(d => ({...d, uploadedAt: d.uploaded_at, uploadedBy: d.uploaded_by})),
-      logs: (logsRes.data as AuditLog[]) || [],
+      documents: (docsRes.data as any[] || []).map(d => ({
+        ...d, 
+        uploadedAt: d.uploaded_at, 
+        uploadedBy: d.uploaded_by
+      })),
+      // ✅ Mapear correctamente los logs (snake_case de DB a camelCase de UI)
+      logs: (logsRes.data as any[] || []).map(l => ({
+        id: l.id,
+        date: l.date,
+        userId: l.user_id,      // ← Cambio aquí
+        userName: l.user_name,   // ← Cambio aquí
+        action: l.action,
+        details: l.details
+      })),
+      totalLogs: logsRes.count || 0,
     };
   } catch (error) {
     console.error("Error fetching data from Supabase", error);
-    return { transactions: [], notes: [], users: [], documents: [], logs: [] };
+    return { 
+      transactions: [], 
+      notes: [], 
+      users: [], 
+      documents: [], 
+      logs: [], 
+      totalLogs: 0 
+    };
   }
 };
 
 // --- Transactions ---
 
 export const apiCreateTransaction = async (transaction: Transaction) => {
-  const { id, ...data } = transaction; // Let DB generate ID if desired, or pass it. 
-  // Supabase usually generates UUIDs, but our frontend generates them. We can send the ID.
+  const { id, ...data } = transaction; 
   const { error } = await supabase.from('transactions').insert([transaction]);
   if (error) throw error;
 };
@@ -108,11 +131,42 @@ export const apiDeleteDocument = async (id: string) => {
   if (error) throw error;
 };
 
-// --- Logs ---
+// --- Logs (CORREGIDO) ---
 
 export const apiCreateLog = async (log: AuditLog) => {
-  const { error } = await supabase.from('audit_logs').insert([log]);
-  if (error) console.error("Error logging", error);
+  if (!supabase) {
+    console.error("❌ Supabase no está inicializado");
+    return;
+  }
+
+  try {
+    console.log("📝 Intentando guardar log:", log);
+    
+    // ✅ Mapear correctamente los nombres de columnas (camelCase UI a snake_case DB)
+    const payload = {
+      id: log.id,
+      date: log.date,
+      user_id: log.userId,      // ← Cambio aquí
+      user_name: log.userName,   // ← Cambio aquí
+      action: log.action,
+      details: log.details
+    };
+    
+    const { data, error } = await supabase
+      .from('audit_logs')
+      .insert([payload])
+      .select();
+    
+    if (error) {
+      console.error("❌ Error al guardar log en Supabase:", error);
+      throw error;
+    }
+    
+    console.log("✅ Log guardado exitosamente:", data);
+    return data;
+  } catch (error) {
+    console.error("❌ Error inesperado al guardar log:", error);
+  }
 };
 
 // --- CSV Export (Frontend only) ---

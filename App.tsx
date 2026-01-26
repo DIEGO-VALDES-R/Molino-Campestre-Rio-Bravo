@@ -312,7 +312,7 @@ const App = () => {
               🌾
             </div>
             <h1 className="text-2xl font-bold text-slate-900">Molino Campestre</h1>
-            <h2 className="text-lg text-brand-600 font-medium">Rios Bravo</h2>
+            <h2 className="text-lg text-brand-600 font-medium">Rio Bravo</h2>
             <p className="text-slate-500 text-sm mt-2">Sistema de Gestión Integral</p>
           </div>
 
@@ -352,7 +352,7 @@ const App = () => {
           </form>
           <div className="mt-8 text-center text-xs text-slate-400">
              <p>Usuario demo por defecto: <span className="font-mono bg-slate-100 px-1 rounded">Administrador</span></p>
-             <p>Contraseña: <span className="font-mono bg-slate-100 px-1 rounded">admin</span></p>
+             <p>Contraseña: <span className="font-mono bg-slate-100 px-1 rounded"></span></p>
           </div>
         </div>
       </div>
@@ -372,7 +372,7 @@ const App = () => {
             </div>
             Molino Campestre
           </h1>
-          <p className="text-slate-400 text-xs mt-1 pl-10">Rios Bravo</p>
+          <p className="text-slate-400 text-xs mt-1 pl-10">Rio Bravo</p>
         </div>
         
         <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
@@ -419,7 +419,7 @@ const App = () => {
            <div className="w-6 h-6 bg-brand-500 rounded flex items-center justify-center">
               <span className="text-xs">🌾</span>
             </div>
-          Molino Rios Bravo
+          Molino Rio Bravo
         </span>
         <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
           {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
