@@ -42,15 +42,15 @@ export default async function handler(request: Request) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    // Prompt corregido usando backticks ()
+    // AQUI ESTA LA CORRECCION: Usamos backticks ()
     const prompt = 
       Actúa como un asesor financiero experto para un negocio familiar.
       Analiza los siguientes datos financieros y proporciona un resumen ejecutivo conciso (máximo 3 párrafos).
 
       Resumen Actual:
-      - Ingresos Totales: main{summary.totalIncome}
-      - Egresos Totales: main{summary.totalExpense}
-      - Balance: main{summary.balance}
+      - Ingresos Totales: Cyan{summary.totalIncome}
+      - Egresos Totales: Cyan{summary.totalExpense}
+      - Balance: Cyan{summary.balance}
 
       Transacciones Recientes:
       
