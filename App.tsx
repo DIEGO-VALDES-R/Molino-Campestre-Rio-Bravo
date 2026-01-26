@@ -41,6 +41,7 @@ import {
   deleteClienteInteresado,
   convertInteresadoToActual,
   getAllClientesActuales,
+  createClienteActual,
   updateClienteActual,
   deleteClienteActual,
   getAllPagosClientes,
@@ -108,6 +109,8 @@ const App = () => {
     const load = async () => {
       setLoading(true);
       try {
+        console.log('Iniciando carga de datos...');
+        
         // Cargar todos los datos en paralelo
         const [basedData, clientesInt, clientesAct, pagos, egresos] = await Promise.all([
           fetchAllData(),
@@ -117,14 +120,21 @@ const App = () => {
           getAllEgresosFuturos()
         ]);
 
+        console.log('Datos cargados:');
+        console.log('Clientes actuales:', clientesAct);
+        console.log('Base data:', basedData);
+
         // Combinar todos los datos
-        setData({
+        const nuevoData = {
           ...basedData,
           clientesInteresados: clientesInt || [],
           clientesActuales: clientesAct || [],
           pagosClientes: pagos || [],
           egresosFuturos: egresos || []
-        });
+        };
+
+        console.log('Estado final:', nuevoData);
+        setData(nuevoData);
       } catch (error) {
         console.error('Error loading data:', error);
         // Asegurar que al menos el estado base esté disponible
@@ -441,7 +451,6 @@ const App = () => {
         setData(prev => ({
           ...prev,
           clientesActuales: prev.clientesActuales.filter(c => c.id !== id),
-          // NO tocar clientesInteresados - dejarlos como 'convertido'
           pagosClientes: prev.pagosClientes.filter(p => p.clienteId !== id)
         }));
         
@@ -465,7 +474,7 @@ const App = () => {
       
       // Actualizar cliente
       const clientesAct = await getAllClientesActuales();
-      setData(prev => ({ ...prev, clientesActuales: clientesAct }));
+      setData(prev => ({ ...prev, clientesActuales: clientesAct || [] }));
       
       logAction('Registrar pago', `Monto: $${pago.monto}`);
     } catch (e) {
@@ -482,7 +491,7 @@ const App = () => {
         
         // Actualizar cliente
         const clientesAct = await getAllClientesActuales();
-        setData(prev => ({ ...prev, clientesActuales: clientesAct }));
+        setData(prev => ({ ...prev, clientesActuales: clientesAct || [] }));
         
         logAction('Eliminar pago', `ID: ${id}`);
       } catch (e) {
@@ -738,7 +747,11 @@ const App = () => {
         {/* Dynamic Content */}
         <div className="animate-fade-in">
           {activeTab === 'dashboard' && (
-            <Dashboard transactions={data.transactions} summary={summary} />
+            <Dashboard 
+              transactions={data.transactions} 
+              summary={summary}
+              clientesActuales={data.clientesActuales}
+            />
           )}
 
           {activeTab === 'transactions' && (
