@@ -1,4 +1,4 @@
-// services/geminiService.ts
+﻿// services/geminiService.ts
 import { Transaction, Note, FinancialSummary } from '../types';
 
 export const getFinancialAdvice = async (
@@ -7,12 +7,12 @@ export const getFinancialAdvice = async (
   summary: FinancialSummary
 ): Promise<string> => {
   
-  // Preparamos los datos (limitamos transacciones para no exceder el tamaño)
+  // Preparamos los datos (limitamos transacciones para no exceder el tamaÃ±o)
   const recentTransactions = transactions.slice(0, 20);
 
   try {
     // Hacemos la llamada a NUESTRA API interna, no a Google directamente
-    const response = await fetch('/api/analyze', {
+    const response = await fetch('/api/analyzeHandler', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -26,15 +26,15 @@ export const getFinancialAdvice = async (
 
     if (!response.ok) {
       const errData = await response.json();
-      throw new Error(errData.error || 'Error en el servidor de análisis');
+      throw new Error(errData.error || 'Error en el servidor de anÃ¡lisis');
     }
 
     const data = await response.json();
-    return data.analysis || "No se pudo generar el análisis.";
+    return data.analysis || "No se pudo generar el anÃ¡lisis.";
 
   } catch (error) {
     console.error("Error calling Analysis API:", error);
-    // Mensaje amigable para el usuario si falla la conexión
-    return "Hubo un error al conectar con el asistente financiero. Por favor verifique su conexión o intente más tarde.";
+    // Mensaje amigable para el usuario si falla la conexiÃ³n
+    return "Hubo un error al conectar con el asistente financiero. Por favor verifique su conexiÃ³n o intente mÃ¡s tarde.";
   }
 };
