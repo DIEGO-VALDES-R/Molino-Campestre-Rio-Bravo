@@ -1,4 +1,4 @@
-export type TransactionType = 'ingreso' | 'egreso';
+﻿export type TransactionType = 'ingreso' | 'egreso';
 
 export interface Attachment {
   id: string;
@@ -31,7 +31,7 @@ export interface User {
   id: string;
   name: string;
   role: 'admin' | 'viewer';
-  password?: string; // In a real app, this should be hashed
+  password?: string;
   email?: string;
 }
 
@@ -56,6 +56,65 @@ export interface AuditLog {
   date: string;
   userId: string;
   userName: string;
-  action: string; // e.g., "Creó transacción", "Eliminó usuario"
+  action: string;
   details: string;
+}
+
+// ==================== CLIENTES ====================
+
+export interface ClienteInteresado {
+  id: string;
+  nombre: string;
+  email?: string;
+  telefono?: string;
+  fechaContacto: string;
+  notas?: string;
+  estado: 'activo' | 'convertido' | 'descartado';
+  createdAt: string;
+}
+
+export interface ClienteActual {
+  id: string;
+  nombre: string;
+  email?: string;
+  telefono?: string;
+  numeroLote: string;
+  valorLote: number;
+  depositoInicial: number;
+  saldoRestante: number;
+  numeroCuotas: number;
+  valorCuota: number;
+  saldoFinal: number;
+  formaPagoInicial?: string;
+  formaPagoCuotas?: string;
+  documentoCompraventa?: string;
+  estado: 'activo' | 'pagado' | 'mora';
+  createdAt: string;
+}
+
+export interface PagoCliente {
+  id: string;
+  clienteId: string;
+  fechaPago: string;
+  monto: number;
+  tipoPago: 'cuota' | 'deposito_inicial' | 'pago_extra';
+  formaPago?: string;
+  documentoAdjunto?: string;
+  notas?: string;
+  createdAt: string;
+}
+
+// ==================== EGRESOS FUTUROS ====================
+
+export interface EgresoFuturo {
+  id: string;
+  fecha: string;
+  tipo: 'planificado' | 'recurrente' | 'extraordinario';
+  categoria: string;
+  descripcion?: string;
+  monto: number;
+  usuario?: string;
+  adjuntos?: Attachment[];
+  estado: 'pendiente' | 'pagado' | 'cancelado';
+  createdAt: string;
 }
