@@ -1,21 +1,28 @@
 import React, { useState, useRef } from 'react';
-import { EgresoFuturo, User, Attachment } from '../types';
+import { EgresoFuturo, User } from '../types';
 import { Calendar, Plus, Trash2, Search, X, Paperclip, FileText, Image as ImageIcon } from 'lucide-react';
 import { fileToBase64 } from '../services/dataService';
 
 interface EgresosFuturosViewProps {
-  egresos: EgresoFuturo[];
-  onAdd: (egreso: Omit<EgresoFuturo, 'id' | 'createdAt'>) => void;
-  onDelete: (id: string) => void;
-  onUpdateEstado: (id: string, estado: 'pendiente' | 'pagado' | 'cancelado') => void;
+  egresosFuturos: EgresoFuturo[];
+  onAddEgreso: (egreso: Omit<EgresoFuturo, 'id' | 'createdAt'>) => void;
+  onUpdateEgreso: (id: string, updates: Partial<EgresoFuturo>) => void;
+  onDeleteEgreso: (id: string) => void;
   currentUser: User;
 }
 
+interface Attachment {
+  id: string;
+  name: string;
+  type: string;
+  data: string;
+}
+
 export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
-  egresos,
-  onAdd,
-  onDelete,
-  onUpdateEstado,
+  egresosFuturos,
+  onAddEgreso,
+  onUpdateEgreso,
+  onDeleteEgreso,
   currentUser,
 }) => {
   const [showModal, setShowModal] = useState(false);
@@ -61,7 +68,7 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onAdd({
+    onAddEgreso({
       ...form,
       usuario: currentUser.name,
       adjuntos: adjuntos.length > 0 ? adjuntos : undefined,
@@ -78,7 +85,7 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
     setShowModal(false);
   };
 
-  const filteredEgresos = egresos
+  const filteredEgresos = egresosFuturos
     .filter((e) => {
       const matchesSearch =
         e.descripcion?.toLowerCase().includes(filter.toLowerCase()) ||
@@ -216,7 +223,7 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
                     <td className="px-6 py-4">
                       <select
                         value={egreso.estado}
-                        onChange={(e) => onUpdateEstado(egreso.id, e.target.value as any)}
+                        onChange={(e) => onUpdateEgreso(egreso.id, { estado: e.target.value as any })}
                         className={`text-xs font-medium px-2 py-1 rounded border-none outline-none cursor-pointer ${getEstadoColor(
                           egreso.estado
                         )}`}
@@ -228,7 +235,7 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
                     </td>
                     <td className="px-6 py-4 text-center">
                       <button
-                        onClick={() => onDelete(egreso.id)}
+                        onClick={() => onDeleteEgreso(egreso.id)}
                         className="text-slate-400 hover:text-red-500 transition-colors"
                         title="Eliminar"
                       >
@@ -372,3 +379,5 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
     </div>
   );
 };
+
+export default EgresosFuturosView;

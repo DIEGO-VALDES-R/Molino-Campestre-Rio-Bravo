@@ -5,24 +5,28 @@ import { Users, UserPlus, DollarSign, FileText, Trash2, Eye, Plus, X, CheckCircl
 interface ClientesViewProps {
   clientesInteresados: ClienteInteresado[];
   clientesActuales: ClienteActual[];
-  pagos: PagoCliente[];
-  onAddInteresado: (cliente: Omit<ClienteInteresado, 'id' | 'createdAt'>) => void;
-  onConvertToActual: (interesadoId: string, clienteData: Omit<ClienteActual, 'id' | 'createdAt'>) => void;
-  onAddPago: (pago: Omit<PagoCliente, 'id' | 'createdAt'>) => void;
-  onDeleteInteresado: (id: string) => void;
-  onDeleteActual: (id: string) => void;
+  pagosClientes: PagoCliente[];
+  onAddClienteInteresado: (cliente: Omit<ClienteInteresado, 'id' | 'createdAt'>) => void;
+  onConvertToClienteActual: (interesadoId: string, clienteData: Omit<ClienteActual, 'id' | 'createdAt'>) => void;
+  onAddPagoCliente: (pago: Omit<PagoCliente, 'id' | 'createdAt'>) => void;
+  onDeleteClienteInteresado: (id: string) => void;
+  onDeleteClienteActual: (id: string) => void;
+  onDeletePagoCliente?: (id: string) => void;
+  onUpdateClienteInteresado?: (id: string, updates: Partial<ClienteInteresado>) => void;
+  onUpdateClienteActual?: (id: string, updates: Partial<ClienteActual>) => void;
   currentUser: User;
 }
 
-export const ClientesView: React.FC<ClientesViewProps> = ({
+const ClientesView: React.FC<ClientesViewProps> = ({
   clientesInteresados,
   clientesActuales,
-  pagos,
-  onAddInteresado,
-  onConvertToActual,
-  onAddPago,
-  onDeleteInteresado,
-  onDeleteActual,
+  pagosClientes,
+  onAddClienteInteresado,
+  onConvertToClienteActual,
+  onAddPagoCliente,
+  onDeleteClienteInteresado,
+  onDeleteClienteActual,
+  onDeletePagoCliente,
   currentUser,
 }) => {
   const [activeTab, setActiveTab] = useState<'interesados' | 'actuales'>('interesados');
@@ -37,6 +41,7 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
     nombre: '',
     email: '',
     telefono: '',
+    direccion: '',
     notas: '',
   });
 
@@ -63,24 +68,38 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
 
   const handleAddInteresado = (e: React.FormEvent) => {
     e.preventDefault();
-    onAddInteresado({
+    onAddClienteInteresado({
       ...formInteresado,
       fechaContacto: new Date().toISOString(),
       estado: 'activo',
     });
-    setFormInteresado({ nombre: '', email: '', telefono: '', notas: '' });
+    setFormInteresado({ nombre: '', email: '', telefono: '', direccion: '', notas: '' });
     setShowModalInteresado(false);
   };
 
   const handleConvertToActual = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedInteresado) return;
+
+    if (!selectedInteresado) {
+      alert('Error: No hay cliente interesado seleccionado');
+      return;
+    }
 
     const saldoRestante = formActual.valorLote - formActual.depositoInicial;
     const valorCuota = saldoRestante / formActual.numeroCuotas;
 
-    onConvertToActual(selectedInteresado.id, {
-      ...formActual,
+    // Convertir desde interesado - SOLO pasar los datos del cliente actual
+    onConvertToClienteActual(selectedInteresado.id, {
+      nombre: formActual.nombre,
+      email: formActual.email,
+      telefono: formActual.telefono,
+      numeroLote: formActual.numeroLote,
+      valorLote: formActual.valorLote,
+      depositoInicial: formActual.depositoInicial,
+      numeroCuotas: formActual.numeroCuotas,
+      formaPagoInicial: formActual.formaPagoInicial,
+      formaPagoCuotas: formActual.formaPagoCuotas,
+      documentoCompraventa: formActual.documentoCompraventa,
       saldoRestante,
       valorCuota,
       saldoFinal: saldoRestante,
@@ -107,7 +126,7 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
     e.preventDefault();
     if (!selectedCliente) return;
 
-    onAddPago({
+    onAddPagoCliente({
       clienteId: selectedCliente.id,
       fechaPago: new Date().toISOString(),
       ...formPago,
@@ -125,7 +144,7 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
   };
 
   const getPagosCliente = (clienteId: string) => {
-    return pagos.filter((p) => p.clienteId === clienteId);
+    return pagosClientes.filter((p) => p.clienteId === clienteId);
   };
 
   const getTotalPagado = (clienteId: string) => {
@@ -191,7 +210,7 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {clientesInteresados
-                  .filter((c) => c.estado === 'activo')
+                  .filter((c) => c.estado !== 'convertido')
                   .map((cliente) => (
                     <tr key={cliente.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4 font-medium text-slate-900">{cliente.nombre}</td>
@@ -222,7 +241,7 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
                             <CheckCircle size={18} />
                           </button>
                           <button
-                            onClick={() => onDeleteInteresado(cliente.id)}
+                            onClick={() => onDeleteClienteInteresado(cliente.id)}
                             className="text-red-500 hover:text-red-700 transition-colors"
                             title="Eliminar"
                           >
@@ -232,7 +251,7 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
                       </td>
                     </tr>
                   ))}
-                {clientesInteresados.filter((c) => c.estado === 'activo').length === 0 && (
+                {clientesInteresados.filter((c) => c.estado !== 'convertido').length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
                       No hay clientes interesados registrados
@@ -250,6 +269,27 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-bold text-slate-800">Clientes con Lotes Adquiridos</h3>
+            <button
+              onClick={() => {
+                setSelectedInteresado(null);
+                setFormActual({
+                  nombre: '',
+                  email: '',
+                  telefono: '',
+                  numeroLote: '',
+                  valorLote: 0,
+                  depositoInicial: 0,
+                  numeroCuotas: 1,
+                  formaPagoInicial: 'efectivo',
+                  formaPagoCuotas: 'efectivo',
+                  documentoCompraventa: '',
+                });
+                setShowModalActual(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
+            >
+              <Plus size={18} /> Agregar Cliente Actual
+            </button>
           </div>
 
           <div className="grid gap-6">
@@ -284,11 +324,11 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                       <div className="bg-slate-50 p-3 rounded-lg">
                         <p className="text-xs text-slate-500 mb-1">Valor Lote</p>
-                        <p className="text-lg font-bold text-slate-900">${cliente.valorLote.toLocaleString()}</p>
+                        <p className="text-lg font-bold text-slate-900">${cliente.valorLote?.toLocaleString() || 0}</p>
                       </div>
                       <div className="bg-slate-50 p-3 rounded-lg">
                         <p className="text-xs text-slate-500 mb-1">Depósito Inicial</p>
-                        <p className="text-lg font-bold text-emerald-600">${cliente.depositoInicial.toLocaleString()}</p>
+                        <p className="text-lg font-bold text-emerald-600">${cliente.depositoInicial?.toLocaleString() || 0}</p>
                       </div>
                       <div className="bg-slate-50 p-3 rounded-lg">
                         <p className="text-xs text-slate-500 mb-1">Total Pagado</p>
@@ -321,7 +361,7 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
                       </div>
                       <div>
                         <span className="text-slate-500">Valor cuota:</span>{' '}
-                        <span className="font-medium">${cliente.valorCuota.toLocaleString()}</span>
+                        <span className="font-medium">${cliente.valorCuota?.toLocaleString() || 0}</span>
                       </div>
                       <div>
                         <span className="text-slate-500">Forma pago inicial:</span>{' '}
@@ -343,15 +383,16 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
                       >
                         <DollarSign size={16} /> Registrar Pago
                       </button>
-                      {cliente.documentoCompraventa && (
-                        <a
-                          href={cliente.documentoCompraventa}
-                          download={`compraventa_${cliente.numeroLote}.pdf`}
-                          className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm"
-                        >
-                          <FileText size={16} /> Ver Compraventa
-                        </a>
-                      )}
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`¿Está seguro de que desea eliminar a ${cliente.nombre}? Se eliminarán todos sus pagos asociados.`)) {
+                            onDeleteClienteActual(cliente.id);
+                          }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-sm"
+                      >
+                        <Trash2 size={16} /> Eliminar
+                      </button>
                     </div>
                   </div>
 
@@ -364,14 +405,22 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
                           .slice(-3)
                           .reverse()
                           .map((pago) => (
-                            <div key={pago.id} className="flex justify-between items-center text-sm bg-white p-2 rounded">
-                              <div>
+                            <div key={pago.id} className="flex items-center justify-between text-sm bg-white p-2 rounded">
+                              <div className="flex-1">
                                 <span className="font-medium">${pago.monto.toLocaleString()}</span>
                                 <span className="text-slate-500 ml-2">
                                   {new Date(pago.fechaPago).toLocaleDateString()}
                                 </span>
                               </div>
-                              <span className="text-xs text-slate-500 capitalize">{pago.formaPago}</span>
+                              <span className="text-xs text-slate-500 capitalize mr-2">{pago.formaPago}</span>
+                              {onDeletePagoCliente && (
+                                <button
+                                  onClick={() => onDeletePagoCliente(pago.id)}
+                                  className="text-red-400 hover:text-red-600"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
                             </div>
                           ))}
                       </div>
@@ -455,7 +504,9 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="font-semibold text-slate-900">Convertir a Cliente Actual</h3>
+              <h3 className="font-semibold text-slate-900">
+                {selectedInteresado ? 'Convertir a Cliente Actual' : 'Nuevo Cliente Actual'}
+              </h3>
               <button onClick={() => setShowModalActual(false)} className="text-slate-400 hover:text-slate-600">
                 <X size={20} />
               </button>
@@ -649,3 +700,5 @@ export const ClientesView: React.FC<ClientesViewProps> = ({
     </div>
   );
 };
+
+export default ClientesView;

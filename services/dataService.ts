@@ -11,7 +11,7 @@ import {
   EgresoFuturo
 } from '../types';
 
-// Helper to convert file to Base64 (kept for UI utility)
+// Helper to convert file to Base64
 export const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -247,9 +247,37 @@ export const apiCreateLog = async (log: AuditLog) => {
   }
 };
 
-// ==================== CLIENTES ====================
+// ==================== CLIENTES INTERESADOS ====================
 
-export const apiCreateClienteInteresado = async (cliente: ClienteInteresado) => {
+export const getAllClientesInteresados = async (): Promise<ClienteInteresado[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('clientes_interesados')
+      .select('*')
+      .order('fecha_contacto', { ascending: false });
+
+    if (error) {
+      console.warn('Error fetching clientes interesados:', error.message);
+      return [];
+    }
+
+    return (data as any[] || []).map(c => ({
+      id: c.id,
+      nombre: c.nombre,
+      email: c.email,
+      telefono: c.telefono,
+      fechaContacto: c.fecha_contacto,
+      notas: c.notas,
+      estado: c.estado,
+      createdAt: c.created_at
+    }));
+  } catch (error) {
+    console.error('Error in getAllClientesInteresados:', error);
+    return [];
+  }
+};
+
+export const createClienteInteresado = async (cliente: ClienteInteresado): Promise<ClienteInteresado> => {
   const payload = {
     id: cliente.id,
     nombre: cliente.nombre,
@@ -260,49 +288,239 @@ export const apiCreateClienteInteresado = async (cliente: ClienteInteresado) => 
     estado: cliente.estado,
     created_at: cliente.createdAt
   };
-  const { error } = await supabase.from('clientes_interesados').insert([payload]);
-  if (error) throw error;
-};
 
-export const apiDeleteClienteInteresado = async (id: string) => {
-  const { error } = await supabase.from('clientes_interesados').delete().eq('id', id);
-  if (error) throw error;
-};
-
-export const apiUpdateClienteInteresadoEstado = async (id: string, estado: 'activo' | 'convertido' | 'descartado') => {
-  const { error } = await supabase.from('clientes_interesados').update({ estado }).eq('id', id);
-  if (error) throw error;
-};
-
-export const apiCreateClienteActual = async (cliente: ClienteActual) => {
-  const payload = {
-    id: cliente.id,
-    nombre: cliente.nombre,
-    email: cliente.email,
-    telefono: cliente.telefono,
-    numero_lote: cliente.numeroLote,
-    valor_lote: cliente.valorLote,
-    deposito_inicial: cliente.depositoInicial,
-    saldo_restante: cliente.saldoRestante,
-    numero_cuotas: cliente.numeroCuotas,
-    valor_cuota: cliente.valorCuota,
-    saldo_final: cliente.saldoFinal,
-    forma_pago_inicial: cliente.formaPagoInicial,
-    forma_pago_cuotas: cliente.formaPagoCuotas,
-    documento_compraventa: cliente.documentoCompraventa,
-    estado: cliente.estado,
-    created_at: cliente.createdAt
+  const { data, error } = await supabase.from('clientes_interesados').insert([payload]).select();
+  
+  if (error) throw new Error('Failed to create cliente interesado');
+  
+  const c = (data as any[])?.[0];
+  return {
+    id: c.id,
+    nombre: c.nombre,
+    email: c.email,
+    telefono: c.telefono,
+    fechaContacto: c.fecha_contacto,
+    notas: c.notas,
+    estado: c.estado,
+    createdAt: c.created_at
   };
-  const { error } = await supabase.from('clientes_actuales').insert([payload]);
-  if (error) throw error;
 };
 
-export const apiDeleteClienteActual = async (id: string) => {
+export const updateClienteInteresado = async (id: string, updates: Partial<ClienteInteresado>): Promise<ClienteInteresado> => {
+  const payload: any = {};
+  
+  if (updates.nombre !== undefined) payload.nombre = updates.nombre;
+  if (updates.email !== undefined) payload.email = updates.email;
+  if (updates.telefono !== undefined) payload.telefono = updates.telefono;
+  if (updates.fechaContacto !== undefined) payload.fecha_contacto = updates.fechaContacto;
+  if (updates.notas !== undefined) payload.notas = updates.notas;
+  if (updates.estado !== undefined) payload.estado = updates.estado;
+
+  const { data, error } = await supabase
+    .from('clientes_interesados')
+    .update(payload)
+    .eq('id', id)
+    .select();
+
+  if (error) throw new Error('Failed to update cliente interesado');
+  
+  const c = (data as any[])?.[0];
+  return {
+    id: c.id,
+    nombre: c.nombre,
+    email: c.email,
+    telefono: c.telefono,
+    fechaContacto: c.fecha_contacto,
+    notas: c.notas,
+    estado: c.estado,
+    createdAt: c.created_at
+  };
+};
+
+export const deleteClienteInteresado = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('clientes_interesados').delete().eq('id', id);
+  if (error) throw new Error('Failed to delete cliente interesado');
+};
+
+// ==================== CONVERSIÓN A CLIENTE ACTUAL ====================
+
+export const convertInteresadoToActual = async (
+  interesadoId: string,
+  clienteData: Omit<ClienteActual, 'id' | 'createdAt'>
+): Promise<ClienteActual> => {
+  try {
+    // 1. Crear cliente actual
+    const nuevoCliente: ClienteActual = {
+      id: crypto.randomUUID(),
+      ...clienteData,
+      createdAt: new Date().toISOString()
+    };
+
+    const payload = {
+      id: nuevoCliente.id,
+      nombre: nuevoCliente.nombre,
+      email: nuevoCliente.email,
+      telefono: nuevoCliente.telefono,
+      numero_lote: nuevoCliente.numeroLote,
+      valor_lote: nuevoCliente.valorLote,
+      deposito_inicial: nuevoCliente.depositoInicial,
+      saldo_restante: nuevoCliente.saldoRestante,
+      numero_cuotas: nuevoCliente.numeroCuotas,
+      valor_cuota: nuevoCliente.valorCuota,
+      saldo_final: nuevoCliente.saldoFinal,
+      forma_pago_inicial: nuevoCliente.formaPagoInicial,
+      forma_pago_cuotas: nuevoCliente.formaPagoCuotas,
+      documento_compraventa: nuevoCliente.documentoCompraventa,
+      estado: nuevoCliente.estado,
+      created_at: nuevoCliente.createdAt
+    };
+
+    const { error: insertError } = await supabase
+      .from('clientes_actuales')
+      .insert([payload]);
+
+    if (insertError) throw insertError;
+
+    // 2. Marcar como convertido en clientes_interesados
+    const { error: updateError } = await supabase
+      .from('clientes_interesados')
+      .update({ estado: 'convertido' })
+      .eq('id', interesadoId);
+
+    if (updateError) throw updateError;
+
+    return nuevoCliente;
+  } catch (error) {
+    throw new Error('Failed to convert cliente');
+  }
+};
+
+// ==================== CLIENTES ACTUALES ====================
+
+export const getAllClientesActuales = async (): Promise<ClienteActual[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('clientes_actuales')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('Error fetching clientes actuales:', error.message);
+      return [];
+    }
+
+    return (data as any[] || []).map(c => ({
+      id: c.id,
+      nombre: c.nombre,
+      email: c.email,
+      telefono: c.telefono,
+      numeroLote: c.numero_lote,
+      valorLote: c.valor_lote,
+      depositoInicial: c.deposito_inicial,
+      saldoRestante: c.saldo_restante,
+      numeroCuotas: c.numero_cuotas,
+      valorCuota: c.valor_cuota,
+      saldoFinal: c.saldo_final,
+      formaPagoInicial: c.forma_pago_inicial,
+      formaPagoCuotas: c.forma_pago_cuotas,
+      documentoCompraventa: c.documento_compraventa,
+      estado: c.estado,
+      createdAt: c.created_at
+    }));
+  } catch (error) {
+    console.error('Error in getAllClientesActuales:', error);
+    return [];
+  }
+};
+
+export const updateClienteActual = async (id: string, updates: Partial<ClienteActual>): Promise<ClienteActual> => {
+  const payload: any = {};
+  
+  if (updates.nombre !== undefined) payload.nombre = updates.nombre;
+  if (updates.email !== undefined) payload.email = updates.email;
+  if (updates.telefono !== undefined) payload.telefono = updates.telefono;
+  if (updates.numeroLote !== undefined) payload.numero_lote = updates.numeroLote;
+  if (updates.valorLote !== undefined) payload.valor_lote = updates.valorLote;
+  if (updates.depositoInicial !== undefined) payload.deposito_inicial = updates.depositoInicial;
+  if (updates.saldoRestante !== undefined) payload.saldo_restante = updates.saldoRestante;
+  if (updates.numeroCuotas !== undefined) payload.numero_cuotas = updates.numeroCuotas;
+  if (updates.valorCuota !== undefined) payload.valor_cuota = updates.valorCuota;
+  if (updates.saldoFinal !== undefined) payload.saldo_final = updates.saldoFinal;
+  if (updates.formaPagoInicial !== undefined) payload.forma_pago_inicial = updates.formaPagoInicial;
+  if (updates.formaPagoCuotas !== undefined) payload.forma_pago_cuotas = updates.formaPagoCuotas;
+  if (updates.documentoCompraventa !== undefined) payload.documento_compraventa = updates.documentoCompraventa;
+  if (updates.estado !== undefined) payload.estado = updates.estado;
+
+  const { data, error } = await supabase
+    .from('clientes_actuales')
+    .update(payload)
+    .eq('id', id)
+    .select();
+
+  if (error) throw new Error('Failed to update cliente actual');
+  
+  const c = (data as any[])?.[0];
+  return {
+    id: c.id,
+    nombre: c.nombre,
+    email: c.email,
+    telefono: c.telefono,
+    numeroLote: c.numero_lote,
+    valorLote: c.valor_lote,
+    depositoInicial: c.deposito_inicial,
+    saldoRestante: c.saldo_restante,
+    numeroCuotas: c.numero_cuotas,
+    valorCuota: c.valor_cuota,
+    saldoFinal: c.saldo_final,
+    formaPagoInicial: c.forma_pago_inicial,
+    formaPagoCuotas: c.forma_pago_cuotas,
+    documentoCompraventa: c.documento_compraventa,
+    estado: c.estado,
+    createdAt: c.created_at
+  };
+};
+
+export const deleteClienteActual = async (id: string): Promise<void> => {
+  // Eliminar primero los pagos asociados
+  await supabase.from('pagos_clientes').delete().eq('cliente_id', id);
+  
+  // Luego eliminar el cliente
   const { error } = await supabase.from('clientes_actuales').delete().eq('id', id);
-  if (error) throw error;
+  if (error) throw new Error('Failed to delete cliente actual');
 };
 
-export const apiCreatePagoCliente = async (pago: PagoCliente) => {
+// ==================== PAGOS CLIENTES ====================
+
+export const getAllPagosClientes = async (): Promise<PagoCliente[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('pagos_clientes')
+      .select('*')
+      .order('fecha_pago', { ascending: false });
+
+    if (error) {
+      console.warn('Error fetching pagos clientes:', error.message);
+      return [];
+    }
+
+    return (data as any[] || []).map(p => ({
+      id: p.id,
+      clienteId: p.cliente_id,
+      fechaPago: p.fecha_pago,
+      monto: p.monto,
+      tipoPago: p.tipo_pago,
+      formaPago: p.forma_pago,
+      documentoAdjunto: p.documento_adjunto,
+      notas: p.notas,
+      createdAt: p.created_at
+    }));
+  } catch (error) {
+    console.error('Error in getAllPagosClientes:', error);
+    return [];
+  }
+};
+
+export const createPagoCliente = async (pago: PagoCliente): Promise<PagoCliente> => {
   const payload = {
     id: pago.id,
     cliente_id: pago.clienteId,
@@ -314,13 +532,63 @@ export const apiCreatePagoCliente = async (pago: PagoCliente) => {
     notas: pago.notas,
     created_at: pago.createdAt
   };
-  const { error } = await supabase.from('pagos_clientes').insert([payload]);
-  if (error) throw error;
+
+  const { data, error } = await supabase.from('pagos_clientes').insert([payload]).select();
+  
+  if (error) throw new Error('Failed to create pago cliente');
+  
+  const p = (data as any[])?.[0];
+  return {
+    id: p.id,
+    clienteId: p.cliente_id,
+    fechaPago: p.fecha_pago,
+    monto: p.monto,
+    tipoPago: p.tipo_pago,
+    formaPago: p.forma_pago,
+    documentoAdjunto: p.documento_adjunto,
+    notas: p.notas,
+    createdAt: p.created_at
+  };
+};
+
+export const deletePagoCliente = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('pagos_clientes').delete().eq('id', id);
+  if (error) throw new Error('Failed to delete pago cliente');
 };
 
 // ==================== EGRESOS FUTUROS ====================
 
-export const apiCreateEgresoFuturo = async (egreso: EgresoFuturo) => {
+export const getAllEgresosFuturos = async (): Promise<EgresoFuturo[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('egresos_futuros')
+      .select('*')
+      .order('fecha', { ascending: true });
+
+    if (error) {
+      console.warn('Error fetching egresos futuros:', error.message);
+      return [];
+    }
+
+    return (data as any[] || []).map(e => ({
+      id: e.id,
+      fecha: e.fecha,
+      tipo: e.tipo,
+      categoria: e.categoria,
+      descripcion: e.descripcion,
+      monto: e.monto,
+      usuario: e.usuario,
+      adjuntos: e.adjuntos,
+      estado: e.estado,
+      createdAt: e.created_at
+    }));
+  } catch (error) {
+    console.error('Error in getAllEgresosFuturos:', error);
+    return [];
+  }
+};
+
+export const createEgresoFuturo = async (egreso: EgresoFuturo): Promise<EgresoFuturo> => {
   const payload = {
     id: egreso.id,
     fecha: egreso.fecha,
@@ -333,18 +601,64 @@ export const apiCreateEgresoFuturo = async (egreso: EgresoFuturo) => {
     estado: egreso.estado,
     created_at: egreso.createdAt
   };
-  const { error } = await supabase.from('egresos_futuros').insert([payload]);
-  if (error) throw error;
+
+  const { data, error } = await supabase.from('egresos_futuros').insert([payload]).select();
+  
+  if (error) throw new Error('Failed to create egreso futuro');
+  
+  const e = (data as any[])?.[0];
+  return {
+    id: e.id,
+    fecha: e.fecha,
+    tipo: e.tipo,
+    categoria: e.categoria,
+    descripcion: e.descripcion,
+    monto: e.monto,
+    usuario: e.usuario,
+    adjuntos: e.adjuntos,
+    estado: e.estado,
+    createdAt: e.created_at
+  };
 };
 
-export const apiDeleteEgresoFuturo = async (id: string) => {
+export const updateEgresoFuturo = async (id: string, updates: Partial<EgresoFuturo>): Promise<EgresoFuturo> => {
+  const payload: any = {};
+  
+  if (updates.fecha !== undefined) payload.fecha = updates.fecha;
+  if (updates.tipo !== undefined) payload.tipo = updates.tipo;
+  if (updates.categoria !== undefined) payload.categoria = updates.categoria;
+  if (updates.descripcion !== undefined) payload.descripcion = updates.descripcion;
+  if (updates.monto !== undefined) payload.monto = updates.monto;
+  if (updates.usuario !== undefined) payload.usuario = updates.usuario;
+  if (updates.adjuntos !== undefined) payload.adjuntos = updates.adjuntos;
+  if (updates.estado !== undefined) payload.estado = updates.estado;
+
+  const { data, error } = await supabase
+    .from('egresos_futuros')
+    .update(payload)
+    .eq('id', id)
+    .select();
+
+  if (error) throw new Error('Failed to update egreso futuro');
+  
+  const e = (data as any[])?.[0];
+  return {
+    id: e.id,
+    fecha: e.fecha,
+    tipo: e.tipo,
+    categoria: e.categoria,
+    descripcion: e.descripcion,
+    monto: e.monto,
+    usuario: e.usuario,
+    adjuntos: e.adjuntos,
+    estado: e.estado,
+    createdAt: e.created_at
+  };
+};
+
+export const deleteEgresoFuturo = async (id: string): Promise<void> => {
   const { error } = await supabase.from('egresos_futuros').delete().eq('id', id);
-  if (error) throw error;
-};
-
-export const apiUpdateEgresoFuturoEstado = async (id: string, estado: 'pendiente' | 'pagado' | 'cancelado') => {
-  const { error } = await supabase.from('egresos_futuros').update({ estado }).eq('id', id);
-  if (error) throw error;
+  if (error) throw new Error('Failed to delete egreso futuro');
 };
 
 // --- CSV Export (Frontend only) ---

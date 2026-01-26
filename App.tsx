@@ -3,7 +3,7 @@ import {
   LayoutDashboard, 
   Receipt, 
   StickyNote, 
-  Users, 
+  Users as UsersIcon, 
   Bot, 
   Menu, 
   X,
@@ -11,13 +11,17 @@ import {
   FileText,
   Activity,
   LogOut,
-  Lock
+  Lock,
+  UserCheck,
+  Calendar
 } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { TransactionList } from './components/TransactionList';
 import { NotesManager } from './components/NotesManager';
 import { DocumentsView } from './components/DocumentsView';
 import { AuditLogView } from './components/AuditLogView';
+import ClientesView from './components/ClientesView';
+import EgresosFuturosView from './components/EgresosFuturosView';
 import { 
   fetchAllData,
   apiCreateTransaction,
@@ -29,10 +33,38 @@ import {
   apiDeleteUser,
   apiCreateDocument,
   apiDeleteDocument,
-  apiCreateLog
+  apiCreateLog,
+  // Nuevas funciones para Clientes
+  getAllClientesInteresados,
+  createClienteInteresado,
+  updateClienteInteresado,
+  deleteClienteInteresado,
+  convertInteresadoToActual,
+  getAllClientesActuales,
+  updateClienteActual,
+  deleteClienteActual,
+  getAllPagosClientes,
+  createPagoCliente,
+  deletePagoCliente,
+  // Nuevas funciones para Egresos Futuros
+  getAllEgresosFuturos,
+  createEgresoFuturo,
+  updateEgresoFuturo,
+  deleteEgresoFuturo
 } from './services/dataService';
 import { getFinancialAdvice } from './services/geminiService';
-import { Transaction, Note, User, FinancialSummary, DocumentFile, AuditLog } from './types';
+import { 
+  Transaction, 
+  Note, 
+  User, 
+  FinancialSummary, 
+  DocumentFile, 
+  AuditLog,
+  ClienteInteresado,
+  ClienteActual,
+  PagoCliente,
+  EgresoFuturo
+} from './types';
 
 const App = () => {
   // --- Auth State ---
@@ -43,7 +75,7 @@ const App = () => {
   const [loading, setLoading] = useState(false);
 
   // --- App State ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'notes' | 'users' | 'documents' | 'logs'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'notes' | 'users' | 'documents' | 'logs' | 'clientes' | 'egresos-futuros'>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -55,21 +87,57 @@ const App = () => {
     users: User[];
     documents: DocumentFile[];
     logs: AuditLog[];
+    clientesInteresados: ClienteInteresado[];
+    clientesActuales: ClienteActual[];
+    pagosClientes: PagoCliente[];
+    egresosFuturos: EgresoFuturo[];
   }>({
     transactions: [],
     notes: [],
     users: [],
     documents: [],
-    logs: []
+    logs: [],
+    clientesInteresados: [],
+    clientesActuales: [],
+    pagosClientes: [],
+    egresosFuturos: []
   });
 
   // --- Initial Load ---
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const fetched = await fetchAllData();
-      setData(fetched);
-      setLoading(false);
+      try {
+        // Cargar todos los datos en paralelo
+        const [basedData, clientesInt, clientesAct, pagos, egresos] = await Promise.all([
+          fetchAllData(),
+          getAllClientesInteresados(),
+          getAllClientesActuales(),
+          getAllPagosClientes(),
+          getAllEgresosFuturos()
+        ]);
+
+        // Combinar todos los datos
+        setData({
+          ...basedData,
+          clientesInteresados: clientesInt || [],
+          clientesActuales: clientesAct || [],
+          pagosClientes: pagos || [],
+          egresosFuturos: egresos || []
+        });
+      } catch (error) {
+        console.error('Error loading data:', error);
+        // Asegurar que al menos el estado base esté disponible
+        setData(prev => ({
+          ...prev,
+          clientesInteresados: [],
+          clientesActuales: [],
+          pagosClientes: [],
+          egresosFuturos: []
+        }));
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, []);
@@ -106,7 +174,7 @@ const App = () => {
     await apiCreateLog(newLog);
   };
 
-  // --- Handlers ---
+  // --- Handlers Existentes ---
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -125,7 +193,6 @@ const App = () => {
     }
 
     // 2. Fallback: Hardcoded Demo Admin
-    // This ensures login works even if DB is empty or not connected yet
     if ((loginEmail === 'Administrador' || loginEmail === 'admin') && loginPassword === 'admin') {
        const demoUser: User = {
          id: 'demo-admin-id',
@@ -159,8 +226,6 @@ const App = () => {
     setLoginEmail('');
     setLoginPassword('');
   };
-
-  // --- Async Handlers (Update UI Optimistically then Call API) ---
 
   const addTransaction = async (t: Omit<Transaction, 'id'>) => {
     const newTransaction: Transaction = { ...t, id: crypto.randomUUID() };
@@ -291,6 +356,185 @@ const App = () => {
     logAction("Consulta IA", "Se solicitó análisis financiero");
   };
 
+  // --- Nuevos Handlers para Clientes ---
+  const handleAddClienteInteresado = async (cliente: Omit<ClienteInteresado, 'id' | 'createdAt'>) => {
+    const nuevoCliente: ClienteInteresado = {
+      ...cliente,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString()
+    };
+    setData(prev => ({ ...prev, clientesInteresados: [nuevoCliente, ...prev.clientesInteresados] }));
+    try {
+      await createClienteInteresado(nuevoCliente);
+      logAction('Agregar cliente interesado', `Cliente: ${cliente.nombre}`);
+    } catch (e) {
+      console.error(e);
+      alert('Error guardando cliente');
+    }
+  };
+
+  const handleConvertToClienteActual = async (
+    interesadoId: string,
+    clienteData: Omit<ClienteActual, 'id' | 'createdAt'>
+  ) => {
+    try {
+      // Convertir el cliente en la BD
+      const nuevoCliente = await convertInteresadoToActual(interesadoId, clienteData);
+      
+      // Actualizar SOLO la lista de interesados (quitando el que se convirtió)
+      setData(prev => ({
+        ...prev,
+        clientesInteresados: prev.clientesInteresados
+          .map(c => c.id === interesadoId ? { ...c, estado: 'convertido' } : c)
+          .filter(c => c.estado !== 'convertido'), // Remover los convertidos de la vista
+        clientesActuales: [nuevoCliente, ...prev.clientesActuales]
+      }));
+      
+      logAction('Convertir cliente', `${clienteData.nombre} - Lote ${clienteData.numeroLote}`);
+    } catch (e) {
+      console.error(e);
+      alert('Error convirtiendo cliente');
+    }
+  };
+
+  const handleUpdateClienteInteresado = async (id: string, updates: Partial<ClienteInteresado>) => {
+    setData(prev => ({
+      ...prev,
+      clientesInteresados: prev.clientesInteresados.map(c => c.id === id ? { ...c, ...updates } : c)
+    }));
+    try {
+      await updateClienteInteresado(id, updates);
+      logAction('Actualizar cliente interesado', `ID: ${id}`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteClienteInteresado = async (id: string) => {
+    setData(prev => ({ ...prev, clientesInteresados: prev.clientesInteresados.filter(c => c.id !== id) }));
+    try {
+      await deleteClienteInteresado(id);
+      logAction('Eliminar cliente interesado', `ID: ${id}`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleUpdateClienteActual = async (id: string, updates: Partial<ClienteActual>) => {
+    setData(prev => ({
+      ...prev,
+      clientesActuales: prev.clientesActuales.map(c => c.id === id ? { ...c, ...updates } : c)
+    }));
+    try {
+      await updateClienteActual(id, updates);
+      logAction('Actualizar cliente actual', `ID: ${id}`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteClienteActual = async (id: string) => {
+    if (window.confirm('¿Eliminar este cliente? Se eliminarán también todos sus pagos.')) {
+      try {
+        // Eliminar de BD
+        await deleteClienteActual(id);
+        
+        // Actualizar estado local
+        setData(prev => ({
+          ...prev,
+          clientesActuales: prev.clientesActuales.filter(c => c.id !== id),
+          // NO tocar clientesInteresados - dejarlos como 'convertido'
+          pagosClientes: prev.pagosClientes.filter(p => p.clienteId !== id)
+        }));
+        
+        logAction('Eliminar cliente actual', `ID: ${id}`);
+      } catch (e) {
+        console.error(e);
+        alert('Error eliminando cliente');
+      }
+    }
+  };
+
+  const handleAddPagoCliente = async (pago: Omit<PagoCliente, 'id' | 'createdAt'>) => {
+    const nuevoPago: PagoCliente = {
+      ...pago,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString()
+    };
+    setData(prev => ({ ...prev, pagosClientes: [nuevoPago, ...prev.pagosClientes] }));
+    try {
+      await createPagoCliente(nuevoPago);
+      
+      // Actualizar cliente
+      const clientesAct = await getAllClientesActuales();
+      setData(prev => ({ ...prev, clientesActuales: clientesAct }));
+      
+      logAction('Registrar pago', `Monto: $${pago.monto}`);
+    } catch (e) {
+      console.error(e);
+      alert('Error registrando pago');
+    }
+  };
+
+  const handleDeletePagoCliente = async (id: string) => {
+    if (window.confirm('¿Eliminar este pago?')) {
+      setData(prev => ({ ...prev, pagosClientes: prev.pagosClientes.filter(p => p.id !== id) }));
+      try {
+        await deletePagoCliente(id);
+        
+        // Actualizar cliente
+        const clientesAct = await getAllClientesActuales();
+        setData(prev => ({ ...prev, clientesActuales: clientesAct }));
+        
+        logAction('Eliminar pago', `ID: ${id}`);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  // --- Nuevos Handlers para Egresos Futuros ---
+  const handleAddEgresoFuturo = async (egreso: Omit<EgresoFuturo, 'id' | 'createdAt'>) => {
+    const nuevoEgreso: EgresoFuturo = {
+      ...egreso,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString()
+    };
+    setData(prev => ({ ...prev, egresosFuturos: [nuevoEgreso, ...prev.egresosFuturos] }));
+    try {
+      await createEgresoFuturo(nuevoEgreso);
+      logAction('Agregar egreso futuro', `${egreso.descripcion || egreso.categoria} - $${egreso.monto}`);
+    } catch (e) {
+      console.error(e);
+      alert('Error guardando egreso futuro');
+    }
+  };
+
+  const handleUpdateEgresoFuturo = async (id: string, updates: Partial<EgresoFuturo>) => {
+    setData(prev => ({
+      ...prev,
+      egresosFuturos: prev.egresosFuturos.map(e => e.id === id ? { ...e, ...updates } : e)
+    }));
+    try {
+      await updateEgresoFuturo(id, updates);
+      logAction('Actualizar egreso futuro', `ID: ${id}`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteEgresoFuturo = async (id: string) => {
+    if (window.confirm('¿Eliminar este egreso futuro?')) {
+      setData(prev => ({ ...prev, egresosFuturos: prev.egresosFuturos.filter(e => e.id !== id) }));
+      try {
+        await deleteEgresoFuturo(id);
+        logAction('Eliminar egreso futuro', `ID: ${id}`);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
   // --- Render ---
 
   if (loading) {
@@ -352,7 +596,7 @@ const App = () => {
           </form>
           <div className="mt-8 text-center text-xs text-slate-400">
              <p>Usuario demo por defecto: <span className="font-mono bg-slate-100 px-1 rounded">Administrador</span></p>
-             <p>Contraseña: <span className="font-mono bg-slate-100 px-1 rounded"></span></p>
+             <p>Contraseña: <span className="font-mono bg-slate-100 px-1 rounded">admin</span></p>
           </div>
         </div>
       </div>
@@ -378,11 +622,13 @@ const App = () => {
         <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
           <SidebarItem icon={<LayoutDashboard size={20}/>} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
           <SidebarItem icon={<Receipt size={20}/>} label="Transacciones" active={activeTab === 'transactions'} onClick={() => setActiveTab('transactions')} />
+          <SidebarItem icon={<UserCheck size={20}/>} label="Clientes" active={activeTab === 'clientes'} onClick={() => setActiveTab('clientes')} />
+          <SidebarItem icon={<Calendar size={20}/>} label="Egresos Futuros" active={activeTab === 'egresos-futuros'} onClick={() => setActiveTab('egresos-futuros')} />
           <SidebarItem icon={<FileText size={20}/>} label="Documentos" active={activeTab === 'documents'} onClick={() => setActiveTab('documents')} />
           <SidebarItem icon={<StickyNote size={20}/>} label="Notas & Temas" active={activeTab === 'notes'} onClick={() => setActiveTab('notes')} />
           <SidebarItem icon={<Activity size={20}/>} label="Bitácora" active={activeTab === 'logs'} onClick={() => setActiveTab('logs')} />
           {currentUser.role === 'admin' && (
-             <SidebarItem icon={<Users size={20}/>} label="Usuarios" active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
+             <SidebarItem icon={<UsersIcon size={20}/>} label="Usuarios" active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
           )}
         </nav>
 
@@ -431,11 +677,13 @@ const App = () => {
         <div className="fixed inset-0 bg-slate-900 z-10 pt-16 px-4 pb-8 space-y-4 md:hidden animate-fade-in overflow-y-auto">
            <SidebarItem icon={<LayoutDashboard size={20}/>} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<Receipt size={20}/>} label="Transacciones" active={activeTab === 'transactions'} onClick={() => { setActiveTab('transactions'); setMobileMenuOpen(false); }} />
+           <SidebarItem icon={<UserCheck size={20}/>} label="Clientes" active={activeTab === 'clientes'} onClick={() => { setActiveTab('clientes'); setMobileMenuOpen(false); }} />
+           <SidebarItem icon={<Calendar size={20}/>} label="Egresos Futuros" active={activeTab === 'egresos-futuros'} onClick={() => { setActiveTab('egresos-futuros'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<FileText size={20}/>} label="Documentos" active={activeTab === 'documents'} onClick={() => { setActiveTab('documents'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<StickyNote size={20}/>} label="Notas & Temas" active={activeTab === 'notes'} onClick={() => { setActiveTab('notes'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<Activity size={20}/>} label="Bitácora" active={activeTab === 'logs'} onClick={() => { setActiveTab('logs'); setMobileMenuOpen(false); }} />
            {currentUser.role === 'admin' && (
-             <SidebarItem icon={<Users size={20}/>} label="Usuarios" active={activeTab === 'users'} onClick={() => { setActiveTab('users'); setMobileMenuOpen(false); }} />
+             <SidebarItem icon={<UsersIcon size={20}/>} label="Usuarios" active={activeTab === 'users'} onClick={() => { setActiveTab('users'); setMobileMenuOpen(false); }} />
            )}
            <button onClick={handleLogout} className="w-full text-left flex items-center gap-3 px-4 py-3 text-red-400 font-medium">
              <LogOut size={20} /> Salir
@@ -451,6 +699,8 @@ const App = () => {
             <h2 className="text-2xl font-bold text-slate-900">
               {activeTab === 'dashboard' && 'Resumen Financiero'}
               {activeTab === 'transactions' && 'Movimientos'}
+              {activeTab === 'clientes' && 'Gestión de Clientes'}
+              {activeTab === 'egresos-futuros' && 'Egresos Futuros'}
               {activeTab === 'notes' && 'Gestión de Temas'}
               {activeTab === 'documents' && 'Gestión Documental'}
               {activeTab === 'logs' && 'Registro de Actividad'}
@@ -499,6 +749,33 @@ const App = () => {
               onAdd={addTransaction} 
               onDelete={deleteTransaction}
               users={data.users}
+              currentUser={currentUser}
+            />
+          )}
+
+          {activeTab === 'clientes' && (
+            <ClientesView
+              clientesInteresados={data.clientesInteresados}
+              clientesActuales={data.clientesActuales}
+              pagosClientes={data.pagosClientes}
+              onAddClienteInteresado={handleAddClienteInteresado}
+              onConvertToClienteActual={handleConvertToClienteActual}
+              onUpdateClienteInteresado={handleUpdateClienteInteresado}
+              onDeleteClienteInteresado={handleDeleteClienteInteresado}
+              onUpdateClienteActual={handleUpdateClienteActual}
+              onDeleteClienteActual={handleDeleteClienteActual}
+              onAddPagoCliente={handleAddPagoCliente}
+              onDeletePagoCliente={handleDeletePagoCliente}
+              currentUser={currentUser}
+            />
+          )}
+
+          {activeTab === 'egresos-futuros' && (
+            <EgresosFuturosView
+              egresosFuturos={data.egresosFuturos}
+              onAddEgreso={handleAddEgresoFuturo}
+              onUpdateEgreso={handleUpdateEgresoFuturo}
+              onDeleteEgreso={handleDeleteEgresoFuturo}
               currentUser={currentUser}
             />
           )}
@@ -561,7 +838,7 @@ const App = () => {
                       <button 
                          onClick={() => deleteUser(u.id)} 
                          className="text-slate-400 hover:text-red-500"
-                         disabled={u.role === 'admin'} // Prevent deleting main admin
+                         disabled={u.role === 'admin'}
                          title={u.role === 'admin' ? "No se puede eliminar al admin principal" : "Eliminar"}
                       >
                          <X size={18} />
