@@ -188,12 +188,14 @@ const ClientesView: React.FC<ClientesViewProps> = ({
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-bold text-slate-800">Gestión de Clientes Interesados</h3>
-            <button
-              onClick={() => setShowModalInteresado(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
-            >
-              <Plus size={18} /> Agregar Interesado
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowModalInteresado(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
+              >
+                <Plus size={18} /> Agregar Interesado
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
