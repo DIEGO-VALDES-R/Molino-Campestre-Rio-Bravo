@@ -42,15 +42,15 @@ export default async function handler(request: Request) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    // Prompt correctamente formateado
+    // Prompt corregido usando backticks ()
     const prompt = 
       Actúa como un asesor financiero experto para un negocio familiar.
       Analiza los siguientes datos financieros y proporciona un resumen ejecutivo conciso (máximo 3 párrafos).
 
       Resumen Actual:
-      - Ingresos Totales: Out-Null{summary.totalIncome}
-      - Egresos Totales: Out-Null{summary.totalExpense}
-      - Balance: Out-Null{summary.balance}
+      - Ingresos Totales: main{summary.totalIncome}
+      - Egresos Totales: main{summary.totalExpense}
+      - Balance: main{summary.balance}
 
       Transacciones Recientes:
       
@@ -76,5 +76,3 @@ export default async function handler(request: Request) {
     });
   }
 }
-
-// Forzando rebuild limpio
