@@ -378,15 +378,13 @@ const App = () => {
     clienteData: Omit<ClienteActual, 'id' | 'createdAt'>
   ) => {
     try {
-      // Convertir el cliente en la BD
+      // Convertir el cliente en la BD (esto ya borra de interesados)
       const nuevoCliente = await convertInteresadoToActual(interesadoId, clienteData);
       
-      // Actualizar SOLO la lista de interesados (quitando el que se convirtió)
+      // Actualizar UI: quitar de interesados y agregar a actuales
       setData(prev => ({
         ...prev,
-        clientesInteresados: prev.clientesInteresados
-          .map(c => c.id === interesadoId ? { ...c, estado: 'convertido' } : c)
-          .filter(c => c.estado !== 'convertido'), // Remover los convertidos de la vista
+        clientesInteresados: prev.clientesInteresados.filter(c => c.id !== interesadoId),
         clientesActuales: [nuevoCliente, ...prev.clientesActuales]
       }));
       

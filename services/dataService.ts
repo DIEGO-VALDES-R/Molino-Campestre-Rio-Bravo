@@ -375,22 +375,25 @@ export const convertInteresadoToActual = async (
       created_at: nuevoCliente.createdAt
     };
 
+    // Insertar el nuevo cliente actual
     const { error: insertError } = await supabase
       .from('clientes_actuales')
       .insert([payload]);
 
     if (insertError) throw insertError;
 
-    // 2. Marcar como convertido en clientes_interesados
-    const { error: updateError } = await supabase
+    // ✅ ELIMINAR el cliente interesado (no marcarlo como convertido)
+    const { error: deleteError } = await supabase
       .from('clientes_interesados')
-      .update({ estado: 'convertido' })
+      .delete()
       .eq('id', interesadoId);
 
-    if (updateError) throw updateError;
+    if (deleteError) throw deleteError;
 
+    console.log('✅ Cliente convertido y eliminado de interesados');
     return nuevoCliente;
   } catch (error) {
+    console.error('❌ Error converting cliente:', error);
     throw new Error('Failed to convert cliente');
   }
 };
