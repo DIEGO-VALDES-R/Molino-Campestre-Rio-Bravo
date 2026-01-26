@@ -1,18 +1,19 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
-import { Transaction, FinancialSummary, ClienteActual } from '../types';
+import { Transaction, FinancialSummary, ClienteActual, PagoCliente } from '../types';
 import { TrendingUp, TrendingDown, DollarSign, Wallet, Home, Users } from 'lucide-react';
 
 interface DashboardProps {
   transactions: Transaction[];
   summary: FinancialSummary;
   clientesActuales?: ClienteActual[];
+  pagosClientes?: PagoCliente[];
 }
 
 const COLORS = ['#10b981', '#ef4444'];
 const COLORS_LOTES = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 
-export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, clientesActuales = [] }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, clientesActuales = [], pagosClientes = [] }) => {
   
   const chartData = useMemo(() => {
     // Group by month (last 6 months)
@@ -41,7 +42,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
   const totalLotes = clientesActuales.length;
   const totalValorLotes = clientesActuales.reduce((sum, c) => sum + (c.valorLote || 0), 0);
   const totalDepositosRecibidos = clientesActuales.reduce((sum, c) => sum + (c.depositoInicial || 0), 0);
-  const totalSaldoPendiente = clientesActuales.reduce((sum, c) => sum + (c.saldoRestante || 0), 0);
+  
+  // Calcular saldo pendiente correctamente: Valor Lote - Depósito Inicial - Total Pagado
+  const totalSaldoPendiente = clientesActuales.reduce((sum, c) => {
+    const totalPagadoCliente = pagosClientes
+      .filter(p => p.clienteId === c.id)
+      .reduce((acc, p) => acc + (p.monto || 0), 0);
+    const saldoCliente = (c.valorLote || 0) - (c.depositoInicial || 0) - totalPagadoCliente;
+    return sum + Math.max(0, saldoCliente); // No mostrar negativos
+  }, 0);
+  
   const porcentajePromedioPago = totalValorLotes > 0 ? Math.round((totalDepositosRecibidos / totalValorLotes) * 100) : 0;
   const clientesPagados = clientesActuales.filter(c => c.estado === 'pagado').length;
   const clientesEnCuota = clientesActuales.filter(c => c.estado === 'activo' || c.estado === 'mora').length;

@@ -751,6 +751,7 @@ const App = () => {
               transactions={data.transactions} 
               summary={summary}
               clientesActuales={data.clientesActuales}
+              pagosClientes={data.pagosClientes}
             />
           )}
 
