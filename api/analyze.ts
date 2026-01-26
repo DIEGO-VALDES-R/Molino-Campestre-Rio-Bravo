@@ -42,22 +42,22 @@ export default async function handler(request: Request) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    // AQUI ESTA LA CORRECCION: Usamos backticks ()
-    const prompt = 
+    // Prompt corregido
+    const prompt = `
       Actúa como un asesor financiero experto para un negocio familiar.
       Analiza los siguientes datos financieros y proporciona un resumen ejecutivo conciso (máximo 3 párrafos).
 
       Resumen Actual:
-      - Ingresos Totales: Cyan{summary.totalIncome}
-      - Egresos Totales: Cyan{summary.totalExpense}
-      - Balance: Cyan{summary.balance}
+      - Ingresos Totales: $${summary.totalIncome}
+      - Egresos Totales: $${summary.totalExpense}
+      - Balance: $${summary.balance}
 
       Transacciones Recientes:
-      
+      ${JSON.stringify(transactions)}
 
       Temas Pendientes en Notas:
-      
-    ;
+      ${JSON.stringify(notes.filter((n: any) => n.status === 'futuro').map((n: any) => n.title))}
+    `;
 
     const result = await model.generateContent(prompt);
     const response = result.response;
