@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ClienteInteresado, ClienteActual, PagoCliente, User } from '../types';
-import { Users, UserPlus, DollarSign, FileText, Trash2, Eye, Plus, X, CheckCircle } from 'lucide-react';
+import { Users, UserPlus, DollarSign, FileText, Trash2, Eye, Plus, X, CheckCircle, Printer } from 'lucide-react';
+import jsPDF from 'jspdf';
 
 interface ClientesViewProps {
   clientesInteresados: ClienteInteresado[];
@@ -88,7 +89,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
     const saldoRestante = formActual.valorLote - formActual.depositoInicial;
     const valorCuota = saldoRestante / formActual.numeroCuotas;
 
-    // Convertir desde interesado - SOLO pasar los datos del cliente actual
     onConvertToClienteActual(selectedInteresado.id, {
       nombre: formActual.nombre,
       email: formActual.email,
@@ -151,35 +151,368 @@ const ClientesView: React.FC<ClientesViewProps> = ({
     return getPagosCliente(clienteId).reduce((sum, p) => sum + p.monto, 0);
   };
 
+  // ============================================
+  // FUNCIÓN DE EXPORTACIÓN A PDF
+  // ============================================
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF();
+      
+      // Configurar colores
+      const brandColor = [79, 70, 229];
+      const greenColor = [16, 185, 129];
+      const redColor = [239, 68, 68];
+      const blueColor = [59, 130, 246];
+      const orangeColor = [249, 115, 22];
+
+      // ===== PÁGINA 1: RESUMEN GENERAL =====
+      
+      // Título principal
+      doc.setFillColor(brandColor[0], brandColor[1], brandColor[2]);
+      doc.rect(0, 0, 210, 35, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Reporte de Clientes', 105, 15, { align: 'center' });
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Generado: ${new Date().toLocaleDateString('es-ES')}`, 105, 25, { align: 'center' });
+
+      // Calcular estadísticas
+      const totalClientes = clientesActuales.length;
+      const totalInteresados = clientesInteresados.filter(c => c.estado !== 'convertido').length;
+      const totalValorLotes = clientesActuales.reduce((sum, c) => sum + (c.valorLote || 0), 0);
+      const totalPagado = pagosClientes.reduce((sum, p) => sum + p.monto, 0);
+      const totalPendiente = clientesActuales.reduce((sum, c) => {
+        const pagos = getPagosCliente(c.id);
+        const totalPagadoCliente = pagos.reduce((s, p) => s + p.monto, 0);
+        return sum + (c.saldoFinal - totalPagadoCliente);
+      }, 0);
+
+      // Resumen General
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Resumen General', 14, 45);
+
+      // Tarjetas de estadísticas (2x3)
+      const cardY = 52;
+      const cardHeight = 18;
+      const cardWidth = 60;
+      
+      // Fila 1
+      // Clientes Actuales
+      doc.setFillColor(240, 253, 244);
+      doc.setDrawColor(200, 200, 200);
+      doc.roundedRect(14, cardY, cardWidth, cardHeight, 3, 3, 'FD');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Clientes Actuales', 44, cardY + 6, { align: 'center' });
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
+      doc.text(totalClientes.toString(), 44, cardY + 14, { align: 'center' });
+
+      // Clientes Interesados
+      doc.setFillColor(239, 246, 255);
+      doc.roundedRect(78, cardY, cardWidth, cardHeight, 3, 3, 'FD');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Interesados', 108, cardY + 6, { align: 'center' });
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(blueColor[0], blueColor[1], blueColor[2]);
+      doc.text(totalInteresados.toString(), 108, cardY + 14, { align: 'center' });
+
+      // Total Valor Lotes
+      doc.setFillColor(254, 249, 195);
+      doc.roundedRect(142, cardY, cardWidth, cardHeight, 3, 3, 'FD');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Valor Total Lotes', 172, cardY + 6, { align: 'center' });
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(180, 83, 9);
+      doc.text(`$${totalValorLotes.toLocaleString()}`, 172, cardY + 14, { align: 'center' });
+
+      // Fila 2
+      const cardY2 = cardY + cardHeight + 5;
+      
+      // Total Pagado
+      doc.setFillColor(220, 252, 231);
+      doc.roundedRect(14, cardY2, cardWidth, cardHeight, 3, 3, 'FD');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Total Pagado', 44, cardY2 + 6, { align: 'center' });
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
+      doc.text(`$${totalPagado.toLocaleString()}`, 44, cardY2 + 14, { align: 'center' });
+
+      // Saldo Pendiente
+      doc.setFillColor(255, 237, 213);
+      doc.roundedRect(78, cardY2, cardWidth, cardHeight, 3, 3, 'FD');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Saldo Pendiente', 108, cardY2 + 6, { align: 'center' });
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(orangeColor[0], orangeColor[1], orangeColor[2]);
+      doc.text(`$${totalPendiente.toLocaleString()}`, 108, cardY2 + 14, { align: 'center' });
+
+      // Total Pagos
+      doc.setFillColor(243, 244, 246);
+      doc.roundedRect(142, cardY2, cardWidth, cardHeight, 3, 3, 'FD');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Total Pagos', 172, cardY2 + 6, { align: 'center' });
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(71, 85, 105);
+      doc.text(pagosClientes.length.toString(), 172, cardY2 + 14, { align: 'center' });
+
+      // Tabla de Clientes Actuales
+      let y = 105;
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('Clientes con Lotes Adquiridos', 14, y);
+      
+      y += 8;
+      
+      // Encabezados de tabla
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, y, 182, 8, 'F');
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(71, 85, 105);
+      doc.text('Cliente', 16, y + 5);
+      doc.text('Lote', 60, y + 5);
+      doc.text('Valor', 77, y + 5);
+      doc.text('Pagado', 100, y + 5);
+      doc.text('Pendiente', 125, y + 5);
+      doc.text('Progreso', 155, y + 5);
+      doc.text('Estado', 177, y + 5);
+
+      y += 10;
+
+      // Datos de clientes (máximo 10 para la primera página)
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      const maxClientes = Math.min(clientesActuales.length, 10);
+      
+      for (let i = 0; i < maxClientes; i++) {
+        const cliente = clientesActuales[i];
+        const totalPagadoCliente = getTotalPagado(cliente.id);
+        const saldoPendiente = cliente.saldoFinal - totalPagadoCliente;
+        const progreso = ((totalPagadoCliente / cliente.saldoFinal) * 100).toFixed(0);
+
+        // Alternar color de fondo
+        if (i % 2 === 0) {
+          doc.setFillColor(252, 252, 253);
+          doc.rect(14, y - 3, 182, 7, 'F');
+        }
+
+        // Nombre
+        doc.setTextColor(0, 0, 0);
+        const nombreCorto = cliente.nombre.length > 20 ? cliente.nombre.substring(0, 18) + '...' : cliente.nombre;
+        doc.text(nombreCorto, 16, y + 2);
+
+        // Lote
+        doc.text(`#${cliente.numeroLote}`, 60, y + 2);
+
+        // Valor lote
+        doc.setTextColor(71, 85, 105);
+        doc.text(`$${(cliente.valorLote || 0).toLocaleString()}`, 77, y + 2);
+
+        // Pagado
+        doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
+        doc.text(`$${totalPagadoCliente.toLocaleString()}`, 100, y + 2);
+
+        // Pendiente
+        doc.setTextColor(orangeColor[0], orangeColor[1], orangeColor[2]);
+        doc.text(`$${saldoPendiente.toLocaleString()}`, 125, y + 2);
+
+        // Progreso
+        doc.setTextColor(blueColor[0], blueColor[1], blueColor[2]);
+        doc.text(`${progreso}%`, 155, y + 2);
+
+        // Estado (badge)
+        let estadoColor, estadoBg;
+        if (cliente.estado === 'pagado') {
+          estadoBg = [220, 252, 231];
+          estadoColor = [6, 95, 70];
+        } else if (cliente.estado === 'mora') {
+          estadoBg = [254, 226, 226];
+          estadoColor = [153, 27, 27];
+        } else {
+          estadoBg = [219, 234, 254];
+          estadoColor = [30, 64, 175];
+        }
+        
+        doc.setFillColor(estadoBg[0], estadoBg[1], estadoBg[2]);
+        doc.roundedRect(175, y - 2, 18, 5, 1, 1, 'F');
+        doc.setTextColor(estadoColor[0], estadoColor[1], estadoColor[2]);
+        doc.setFontSize(6);
+        doc.text(cliente.estado.toUpperCase(), 184, y + 1.5, { align: 'center' });
+        doc.setFontSize(7);
+
+        y += 7;
+        
+        if (y > 270) break;
+      }
+
+      // ===== PÁGINA 2: HISTORIAL DE PAGOS =====
+      if (pagosClientes.length > 0) {
+        doc.addPage();
+        
+        // Título
+        doc.setFillColor(brandColor[0], brandColor[1], brandColor[2]);
+        doc.rect(0, 0, 210, 25, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Historial de Pagos', 105, 15, { align: 'center' });
+
+        y = 35;
+        
+        // Encabezados
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y, 182, 8, 'F');
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(71, 85, 105);
+        doc.text('Fecha', 16, y + 5);
+        doc.text('Cliente', 40, y + 5);
+        doc.text('Lote', 85, y + 5);
+        doc.text('Monto', 105, y + 5);
+        doc.text('Tipo Pago', 130, y + 5);
+        doc.text('Forma Pago', 165, y + 5);
+
+        y += 10;
+
+        // Pagos (últimos 30)
+        doc.setFont('helvetica', 'normal');
+        const maxPagos = Math.min(pagosClientes.length, 30);
+        const pagosOrdenados = [...pagosClientes]
+          .sort((a, b) => new Date(b.fechaPago).getTime() - new Date(a.fechaPago).getTime())
+          .slice(0, maxPagos);
+
+        for (let i = 0; i < pagosOrdenados.length; i++) {
+          const pago = pagosOrdenados[i];
+          const cliente = clientesActuales.find(c => c.id === pago.clienteId);
+
+          if (i % 2 === 0) {
+            doc.setFillColor(252, 252, 253);
+            doc.rect(14, y - 3, 182, 7, 'F');
+          }
+
+          // Fecha
+          doc.setTextColor(0, 0, 0);
+          doc.text(new Date(pago.fechaPago).toLocaleDateString('es-ES'), 16, y + 2);
+
+          // Cliente
+          const clienteNombre = cliente ? 
+            (cliente.nombre.length > 20 ? cliente.nombre.substring(0, 18) + '...' : cliente.nombre) : 
+            'Desconocido';
+          doc.text(clienteNombre, 40, y + 2);
+
+          // Lote
+          doc.text(cliente ? `#${cliente.numeroLote}` : '-', 85, y + 2);
+
+          // Monto
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
+          doc.text(`$${pago.monto.toLocaleString()}`, 105, y + 2);
+          doc.setFont('helvetica', 'normal');
+
+          // Tipo pago
+          doc.setTextColor(71, 85, 105);
+          const tipoPagoTexto = pago.tipoPago === 'cuota' ? 'Cuota' : 
+                                pago.tipoPago === 'deposito_inicial' ? 'Depósito' : 'Extra';
+          doc.text(tipoPagoTexto, 130, y + 2);
+
+          // Forma pago
+          doc.text(pago.formaPago.charAt(0).toUpperCase() + pago.formaPago.slice(1), 165, y + 2);
+
+          y += 7;
+
+          if (y > 280) break;
+        }
+      }
+
+      // Footer en todas las páginas
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+          `Molino Campestre Rio Bravo - Página ${i} de ${pageCount}`,
+          105,
+          290,
+          { align: 'center' }
+        );
+      }
+
+      // Guardar PDF
+      const fileName = `clientes_${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(fileName);
+      
+    } catch (error) {
+      console.error('Error generando PDF:', error);
+      alert('Error al generar el PDF. Por favor intente nuevamente.');
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Tabs */}
-      <div className="flex gap-4 border-b border-slate-200">
+      {/* Tabs y botón de exportación */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex gap-4 border-b border-slate-200">
+          <button
+            onClick={() => setActiveTab('interesados')}
+            className={`pb-3 px-4 font-medium transition-all ${
+              activeTab === 'interesados'
+                ? 'border-b-2 border-brand-600 text-brand-600'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <UserPlus size={18} />
+              Clientes Interesados ({clientesInteresados.filter(c => c.estado !== 'convertido').length})
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('actuales')}
+            className={`pb-3 px-4 font-medium transition-all ${
+              activeTab === 'actuales'
+                ? 'border-b-2 border-brand-600 text-brand-600'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Users size={18} />
+              Clientes Actuales ({clientesActuales.length})
+            </div>
+          </button>
+        </div>
+
+        {/* Botón de exportación PDF */}
         <button
-          onClick={() => setActiveTab('interesados')}
-          className={`pb-3 px-4 font-medium transition-all ${
-            activeTab === 'interesados'
-              ? 'border-b-2 border-brand-600 text-brand-600'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
+          onClick={handleExportPDF}
+          className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+          title="Exportar a PDF"
         >
-          <div className="flex items-center gap-2">
-            <UserPlus size={18} />
-            Clientes Interesados ({clientesInteresados.length})
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('actuales')}
-          className={`pb-3 px-4 font-medium transition-all ${
-            activeTab === 'actuales'
-              ? 'border-b-2 border-brand-600 text-brand-600'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <Users size={18} />
-            Clientes Actuales ({clientesActuales.length})
-          </div>
+          <Printer size={18} />
+          <span className="hidden sm:inline">Exportar PDF</span>
         </button>
       </div>
 
@@ -442,6 +775,7 @@ const ClientesView: React.FC<ClientesViewProps> = ({
         </div>
       )}
 
+      {/* MODALES (sin cambios) */}
       {/* MODAL: Agregar Interesado */}
       {showModalInteresado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Transaction, TransactionType, User, Attachment } from '../types';
 import { Plus, Trash2, Search, FileDown, Printer, Paperclip, FileText, Image as ImageIcon, X } from 'lucide-react';
 import { exportToCSV, fileToBase64 } from '../services/dataService';
+import jsPDF from 'jspdf';
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -77,7 +78,174 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
   };
 
   const handlePrint = () => {
-    window.print();
+    try {
+      const doc = new jsPDF();
+      
+      // Calcular totales
+      const totalIngresos = filteredTransactions
+        .filter(t => t.type === 'ingreso')
+        .reduce((sum, t) => sum + t.amount, 0);
+      
+      const totalEgresos = filteredTransactions
+        .filter(t => t.type === 'egreso')
+        .reduce((sum, t) => sum + t.amount, 0);
+      
+      const balance = totalIngresos - totalEgresos;
+
+      // Configurar colores
+      const brandColor = [79, 70, 229]; // #4F46E5
+      const greenColor = [16, 185, 129];
+      const redColor = [239, 68, 68];
+
+      // Título
+      doc.setFillColor(brandColor[0], brandColor[1], brandColor[2]);
+      doc.rect(0, 0, 210, 35, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Reporte de Transacciones', 105, 15, { align: 'center' });
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Generado: ${new Date().toLocaleDateString('es-ES')}`, 105, 25, { align: 'center' });
+
+      // Resumen
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Resumen Financiero', 14, 45);
+
+      // Cuadros de resumen
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      
+      // Ingresos
+      doc.setDrawColor(200, 200, 200);
+      doc.setFillColor(240, 253, 244);
+      doc.roundedRect(14, 50, 58, 20, 3, 3, 'FD');
+      doc.setTextColor(100, 100, 100);
+      doc.text('Total Ingresos', 43, 57, { align: 'center' });
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
+      doc.text(`$${totalIngresos.toLocaleString()}`, 43, 66, { align: 'center' });
+
+      // Egresos
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setFillColor(254, 242, 242);
+      doc.roundedRect(76, 50, 58, 20, 3, 3, 'FD');
+      doc.setTextColor(100, 100, 100);
+      doc.text('Total Egresos', 105, 57, { align: 'center' });
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(redColor[0], redColor[1], redColor[2]);
+      doc.text(`$${totalEgresos.toLocaleString()}`, 105, 66, { align: 'center' });
+
+      // Balance
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setFillColor(238, 242, 255);
+      doc.roundedRect(138, 50, 58, 20, 3, 3, 'FD');
+      doc.setTextColor(100, 100, 100);
+      doc.text('Balance', 167, 57, { align: 'center' });
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(brandColor[0], brandColor[1], brandColor[2]);
+      doc.text(`$${balance.toLocaleString()}`, 167, 66, { align: 'center' });
+
+      // Tabla de transacciones
+      let y = 80;
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('Detalle de Transacciones', 14, y);
+      
+      y += 8;
+      
+      // Encabezados
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, y, 182, 8, 'F');
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(71, 85, 105);
+      doc.text('Fecha', 16, y + 5);
+      doc.text('Tipo', 40, y + 5);
+      doc.text('Categoría', 65, y + 5);
+      doc.text('Descripción', 100, y + 5);
+      doc.text('Monto', 176, y + 5, { align: 'right' });
+
+      y += 10;
+
+      // Transacciones (máximo 20 para que quepa en una página)
+      doc.setFont('helvetica', 'normal');
+      const maxTransactions = Math.min(filteredTransactions.length, 20);
+      
+      for (let i = 0; i < maxTransactions; i++) {
+        const t = filteredTransactions[i];
+        
+        // Alternar color de fondo
+        if (i % 2 === 0) {
+          doc.setFillColor(252, 252, 253);
+          doc.rect(14, y - 3, 182, 7, 'F');
+        }
+
+        // Fecha
+        doc.setTextColor(0, 0, 0);
+        doc.text(t.date, 16, y + 2);
+
+        // Tipo (badge)
+        if (t.type === 'ingreso') {
+          doc.setFillColor(209, 250, 229);
+          doc.setTextColor(6, 95, 70);
+        } else {
+          doc.setFillColor(254, 226, 226);
+          doc.setTextColor(153, 27, 27);
+        }
+        doc.roundedRect(38, y - 2, 18, 5, 1, 1, 'F');
+        doc.setFontSize(7);
+        doc.text(t.type === 'ingreso' ? 'Ingreso' : 'Egreso', 47, y + 1.5, { align: 'center' });
+        doc.setFontSize(8);
+
+        // Categoría
+        doc.setTextColor(0, 0, 0);
+        doc.text(t.category.substring(0, 20), 65, y + 2);
+
+        // Descripción (truncar si es muy larga)
+        const desc = t.description.length > 30 ? t.description.substring(0, 27) + '...' : t.description;
+        doc.setTextColor(71, 85, 105);
+        doc.text(desc, 100, y + 2);
+
+        // Monto
+        doc.setFont('helvetica', 'bold');
+        if (t.type === 'ingreso') {
+          doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
+          doc.text(`+$${t.amount.toLocaleString()}`, 194, y + 2, { align: 'right' });
+        } else {
+          doc.setTextColor(redColor[0], redColor[1], redColor[2]);
+          doc.text(`-$${t.amount.toLocaleString()}`, 194, y + 2, { align: 'right' });
+        }
+        doc.setFont('helvetica', 'normal');
+
+        y += 7;
+        
+        // Si se acerca al final de la página, detener
+        if (y > 270) break;
+      }
+
+      // Footer
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Total de transacciones mostradas: ${maxTransactions} de ${filteredTransactions.length}`, 105, 285, { align: 'center' });
+      doc.text('Molino Campestre Rio Bravo - Sistema de Gestión Integral', 105, 290, { align: 'center' });
+
+      // Guardar PDF
+      const fileName = `transacciones_${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(fileName);
+      
+    } catch (error) {
+      console.error('Error generando PDF:', error);
+      alert('Error al generar el PDF. Por favor intente nuevamente.');
+    }
   };
 
   return (
@@ -96,14 +264,16 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
         <div className="flex gap-2 w-full sm:w-auto">
           <button 
             onClick={() => exportToCSV(transactions)}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 border border-emerald-700 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            title="Exportar a Excel"
           >
             <FileDown size={18} />
             <span className="hidden sm:inline">Excel</span>
           </button>
           <button 
-             onClick={handlePrint}
-             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+            onClick={handlePrint}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-red-600 border border-red-700 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+            title="Exportar a PDF"
           >
             <Printer size={18} />
             <span className="hidden sm:inline">PDF</span>
