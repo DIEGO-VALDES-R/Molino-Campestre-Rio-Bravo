@@ -1,40 +1,68 @@
-﻿// services/geminiService.ts
+// services/geminiService.ts - Cliente para llamar a la API de análisis
+
 import { Transaction, Note, FinancialSummary } from '../types';
 
-export const getFinancialAdvice = async (
+export async function getFinancialAdvice(
   transactions: Transaction[],
   notes: Note[],
   summary: FinancialSummary
-): Promise<string> => {
-  
-  // Preparamos los datos (limitamos transacciones para no exceder el tamaÃ±o)
-  const recentTransactions = transactions.slice(0, 20);
-
+): Promise<string> {
   try {
-    // Hacemos la llamada a NUESTRA API interna, no a Google directamente
-    const response = await fetch('/api/analyzeHandler', {
+    console.log('Solicitando análisis financiero...');
+
+    // Determinar la URL base según el ambiente
+    const baseUrl = process.env.REACT_APP_API_URL || window.location.origin;
+    const apiUrl = `${baseUrl}/api/analyze`;
+
+    console.log('URL de API:', apiUrl);
+
+    // Hacer la petición
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        transactions: recentTransactions,
-        notes: notes,
-        summary: summary
+        transactions,
+        notes,
+        summary,
       }),
     });
 
+    // Manejar respuesta
     if (!response.ok) {
-      const errData = await response.json();
-      throw new Error(errData.error || 'Error en el servidor de anÃ¡lisis');
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Error en API:', {
+        status: response.status,
+        error: errorData,
+      });
+      throw new Error(
+        errorData.error ||
+          `Error ${response.status}: ${response.statusText}`
+      );
     }
 
+    // Parsear respuesta
     const data = await response.json();
-    return data.analysis || "No se pudo generar el anÃ¡lisis.";
 
+    if (!data.analysis) {
+      throw new Error('No se recibió análisis');
+    }
+
+    console.log('Análisis recibido exitosamente');
+    return data.analysis;
   } catch (error) {
-    console.error("Error calling Analysis API:", error);
-    // Mensaje amigable para el usuario si falla la conexiÃ³n
-    return "Hubo un error al conectar con el asistente financiero. Por favor verifique su conexiÃ³n o intente mÃ¡s tarde.";
+    console.error('Error en getFinancialAdvice:', error);
+
+    let errorMessage = 'No se pudo conectar con el asesor financiero.';
+
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+
+    // Retornar un mensaje de error amigable
+    throw new Error(
+      `Hubo un error al conectar con el asistente financiero: ${errorMessage}`
+    );
   }
-};
+}

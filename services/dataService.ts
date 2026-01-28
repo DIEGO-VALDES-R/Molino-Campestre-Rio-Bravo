@@ -8,7 +8,8 @@ import {
   ClienteInteresado,
   ClienteActual,
   PagoCliente,
-  EgresoFuturo
+  EgresoFuturo,
+  Lote
 } from '../types';
 
 // Helper to convert file to Base64
@@ -34,7 +35,8 @@ export const fetchAllData = async (pageSize = 100, offset = 0) => {
       clientesInteresadosRes,
       clientesActualesRes,
       pagosRes,
-      egresosFuturosRes
+      egresosFuturosRes,
+      lotesRes
     ] = await Promise.all([
       supabase.from('transactions').select('*').order('date', { ascending: false }),
       supabase.from('notes').select('*').order('created_at', { ascending: false }),
@@ -49,6 +51,7 @@ export const fetchAllData = async (pageSize = 100, offset = 0) => {
       supabase.from('clientes_actuales').select('*').order('created_at', { ascending: false }),
       supabase.from('pagos_clientes').select('*').order('fecha_pago', { ascending: false }),
       supabase.from('egresos_futuros').select('*').order('fecha', { ascending: true }),
+      supabase.from('lotes').select('*').order('numero_lote', { ascending: true })
     ]);
 
     return {
@@ -69,7 +72,6 @@ export const fetchAllData = async (pageSize = 100, offset = 0) => {
         details: l.details
       })),
       totalLogs: logsRes.count || 0,
-      // Nuevas entidades
       clientesInteresados: (clientesInteresadosRes.data as any[] || []).map(c => ({
         id: c.id,
         nombre: c.nombre,
@@ -121,6 +123,21 @@ export const fetchAllData = async (pageSize = 100, offset = 0) => {
         estado: e.estado,
         createdAt: e.created_at
       })),
+      lotes: (lotesRes.data as any[] || []).map(l => ({
+        id: l.id,
+        numeroLote: l.numero_lote,
+        estado: l.estado,
+        area: l.area,
+        ubicacion: l.ubicacion,
+        precio: l.precio,
+        clienteId: l.cliente_id,
+        descripcion: l.descripcion,
+        bloqueadoPor: l.bloqueado_por,
+        fila: l.fila,
+        columna: l.columna,
+        createdAt: l.created_at,
+        updatedAt: l.updated_at
+      }))
     };
   } catch (error) {
     console.error("Error fetching data from Supabase", error);
@@ -134,7 +151,8 @@ export const fetchAllData = async (pageSize = 100, offset = 0) => {
       clientesInteresados: [],
       clientesActuales: [],
       pagosClientes: [],
-      egresosFuturos: []
+      egresosFuturos: [],
+      lotes: []
     };
   }
 };
@@ -210,7 +228,7 @@ export const apiDeleteDocument = async (id: string) => {
   if (error) throw error;
 };
 
-// --- Logs ---
+// --- Logs (BITÁCORA) ---
 
 export const apiCreateLog = async (log: AuditLog) => {
   if (!supabase) {
@@ -219,7 +237,7 @@ export const apiCreateLog = async (log: AuditLog) => {
   }
 
   try {
-    console.log("📝 Intentando guardar log:", log);
+    console.log("📝 Intentando guardar log en Supabase:", log);
     
     const payload = {
       id: log.id,
@@ -230,20 +248,23 @@ export const apiCreateLog = async (log: AuditLog) => {
       details: log.details
     };
     
+    console.log("📝 Payload enviado:", payload);
+    
     const { data, error } = await supabase
       .from('audit_logs')
       .insert([payload])
       .select();
     
     if (error) {
-      console.error("❌ Error al guardar log en Supabase:", error);
+      console.error("❌ Error de Supabase al guardar log:", error);
       throw error;
     }
     
-    console.log("✅ Log guardado exitosamente:", data);
+    console.log("✅ Log guardado exitosamente en Supabase:", data);
     return data;
   } catch (error) {
     console.error("❌ Error inesperado al guardar log:", error);
+    throw error;
   }
 };
 
@@ -349,7 +370,6 @@ export const convertInteresadoToActual = async (
   clienteData: Omit<ClienteActual, 'id' | 'createdAt'>
 ): Promise<ClienteActual> => {
   try {
-    // 1. Crear cliente actual
     const nuevoCliente: ClienteActual = {
       id: crypto.randomUUID(),
       ...clienteData,
@@ -375,14 +395,12 @@ export const convertInteresadoToActual = async (
       created_at: nuevoCliente.createdAt
     };
 
-    // Insertar el nuevo cliente actual
     const { error: insertError } = await supabase
       .from('clientes_actuales')
       .insert([payload]);
 
     if (insertError) throw insertError;
 
-    // ✅ ELIMINAR el cliente interesado (no marcarlo como convertido)
     const { error: deleteError } = await supabase
       .from('clientes_interesados')
       .delete()
@@ -436,6 +454,51 @@ export const getAllClientesActuales = async (): Promise<ClienteActual[]> => {
   }
 };
 
+export const createClienteActual = async (cliente: ClienteActual): Promise<ClienteActual> => {
+  const payload = {
+    id: cliente.id,
+    nombre: cliente.nombre,
+    email: cliente.email,
+    telefono: cliente.telefono,
+    numero_lote: cliente.numeroLote,
+    valor_lote: cliente.valorLote,
+    deposito_inicial: cliente.depositoInicial,
+    saldo_restante: cliente.saldoRestante,
+    numero_cuotas: cliente.numeroCuotas,
+    valor_cuota: cliente.valorCuota,
+    saldo_final: cliente.saldoFinal,
+    forma_pago_inicial: cliente.formaPagoInicial,
+    forma_pago_cuotas: cliente.formaPagoCuotas,
+    documento_compraventa: cliente.documentoCompraventa,
+    estado: cliente.estado,
+    created_at: cliente.createdAt
+  };
+
+  const { data, error } = await supabase.from('clientes_actuales').insert([payload]).select();
+  
+  if (error) throw new Error('Failed to create cliente actual');
+  
+  const c = (data as any[])?.[0];
+  return {
+    id: c.id,
+    nombre: c.nombre,
+    email: c.email,
+    telefono: c.telefono,
+    numeroLote: c.numero_lote,
+    valorLote: c.valor_lote,
+    depositoInicial: c.deposito_inicial,
+    saldoRestante: c.saldo_restante,
+    numeroCuotas: c.numero_cuotas,
+    valorCuota: c.valor_cuota,
+    saldoFinal: c.saldo_final,
+    formaPagoInicial: c.forma_pago_inicial,
+    formaPagoCuotas: c.forma_pago_cuotas,
+    documentoCompraventa: c.documento_compraventa,
+    estado: c.estado,
+    createdAt: c.created_at
+  };
+};
+
 export const updateClienteActual = async (id: string, updates: Partial<ClienteActual>): Promise<ClienteActual> => {
   const payload: any = {};
   
@@ -484,10 +547,7 @@ export const updateClienteActual = async (id: string, updates: Partial<ClienteAc
 };
 
 export const deleteClienteActual = async (id: string): Promise<void> => {
-  // Eliminar primero los pagos asociados
   await supabase.from('pagos_clientes').delete().eq('cliente_id', id);
-  
-  // Luego eliminar el cliente
   const { error } = await supabase.from('clientes_actuales').delete().eq('id', id);
   if (error) throw new Error('Failed to delete cliente actual');
 };
@@ -662,6 +722,151 @@ export const updateEgresoFuturo = async (id: string, updates: Partial<EgresoFutu
 export const deleteEgresoFuturo = async (id: string): Promise<void> => {
   const { error } = await supabase.from('egresos_futuros').delete().eq('id', id);
   if (error) throw new Error('Failed to delete egreso futuro');
+};
+
+// ==================== LOTES ====================
+// ✅ VERSIÓN FINAL CON SNAKE_CASE CORRECTO
+
+export const getAllLotes = async (): Promise<Lote[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('lotes')
+      .select('*')
+      .order('numero_lote', { ascending: true });
+
+    if (error) {
+      console.warn('Error fetching lotes:', error.message);
+      return [];
+    }
+
+    return (data as any[] || []).map(l => ({
+      id: l.id,
+      numeroLote: l.numero_lote,
+      estado: l.estado,
+      area: l.area,
+      ubicacion: l.ubicacion,
+      precio: l.precio,
+      clienteId: l.cliente_id,
+      descripcion: l.descripcion,
+      bloqueadoPor: l.bloqueado_por,
+      fila: l.fila,
+      columna: l.columna,
+      createdAt: l.created_at,
+      updatedAt: l.updated_at
+    }));
+  } catch (error) {
+    console.error('Error in getAllLotes:', error);
+    return [];
+  }
+};
+
+export const createLote = async (lote: Lote): Promise<Lote> => {
+  const estadosValidos = ['disponible', 'vendido', 'reservado', 'bloqueado'];
+  if (!estadosValidos.includes(lote.estado)) {
+    throw new Error(`Estado inválido: ${lote.estado}`);
+  }
+
+  const payload = {
+    id: lote.id,
+    numero_lote: lote.numeroLote,
+    estado: lote.estado,
+    area: lote.area || null,
+    ubicacion: lote.ubicacion || null,
+    precio: lote.precio || null,
+    cliente_id: lote.clienteId || null,
+    descripcion: lote.descripcion || null,
+    bloqueado_por: lote.bloqueadoPor || null,
+    fila: lote.fila || null,
+    columna: lote.columna || null,
+    created_at: lote.createdAt,
+    updated_at: lote.updatedAt
+  };
+
+  console.log('Creando lote con payload:', payload);
+
+  const { data, error } = await supabase.from('lotes').insert([payload]).select();
+  
+  if (error) {
+    console.error('Error en createLote:', error);
+    throw new Error(`Failed to create lote: ${error.message}`);
+  }
+  
+  const l = (data as any[])?.[0];
+  if (!l) throw new Error('No data returned from insert');
+
+  return {
+    id: l.id,
+    numeroLote: l.numero_lote,
+    estado: l.estado,
+    area: l.area,
+    ubicacion: l.ubicacion,
+    precio: l.precio,
+    clienteId: l.cliente_id,
+    descripcion: l.descripcion,
+    bloqueadoPor: l.bloqueado_por,
+    fila: l.fila,
+    columna: l.columna,
+    createdAt: l.created_at,
+    updatedAt: l.updated_at
+  };
+};
+
+export const updateLote = async (id: string, updates: Partial<Lote>): Promise<Lote> => {
+  const payload: any = {};
+  
+  if (updates.numeroLote !== undefined) payload.numero_lote = updates.numeroLote;
+  if (updates.estado !== undefined) payload.estado = updates.estado;
+  if (updates.area !== undefined) payload.area = updates.area;
+  if (updates.ubicacion !== undefined) payload.ubicacion = updates.ubicacion;
+  if (updates.precio !== undefined) payload.precio = updates.precio;
+  if (updates.clienteId !== undefined) payload.cliente_id = updates.clienteId;
+  if (updates.descripcion !== undefined) payload.descripcion = updates.descripcion;
+  if (updates.bloqueadoPor !== undefined) payload.bloqueado_por = updates.bloqueadoPor;
+  if (updates.fila !== undefined) payload.fila = updates.fila;
+  if (updates.columna !== undefined) payload.columna = updates.columna;
+  payload.updated_at = new Date().toISOString();
+
+  console.log('Actualizando lote con payload:', payload);
+
+  const { data, error } = await supabase
+    .from('lotes')
+    .update(payload)
+    .eq('id', id)
+    .select();
+
+  if (error) {
+    console.error('Error en updateLote:', error);
+    throw new Error(`Failed to update lote: ${error.message}`);
+  }
+  
+  const l = (data as any[])?.[0];
+  if (!l) throw new Error('No data returned from update');
+
+  return {
+    id: l.id,
+    numeroLote: l.numero_lote,
+    estado: l.estado,
+    area: l.area,
+    ubicacion: l.ubicacion,
+    precio: l.precio,
+    clienteId: l.cliente_id,
+    descripcion: l.descripcion,
+    bloqueadoPor: l.bloqueado_por,
+    fila: l.fila,
+    columna: l.columna,
+    createdAt: l.created_at,
+    updatedAt: l.updated_at
+  };
+};
+
+export const deleteLote = async (id: string): Promise<void> => {
+  console.log('Eliminando lote:', id);
+
+  const { error } = await supabase.from('lotes').delete().eq('id', id);
+  if (error) {
+    console.error('Error en deleteLote:', error);
+    throw new Error(`Failed to delete lote: ${error.message}`);
+  }
 };
 
 // --- CSV Export (Frontend only) ---

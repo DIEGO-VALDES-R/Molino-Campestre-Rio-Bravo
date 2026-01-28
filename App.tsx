@@ -1,3 +1,6 @@
+import MapaLotes from './components/MapaLotes';
+import GestionLotes from './components/GestionLotes';
+import { Lote } from './types';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, 
@@ -13,7 +16,8 @@ import {
   LogOut,
   Lock,
   UserCheck,
-  Calendar
+  Calendar,
+  MapPin
 } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { TransactionList } from './components/TransactionList';
@@ -51,7 +55,12 @@ import {
   getAllEgresosFuturos,
   createEgresoFuturo,
   updateEgresoFuturo,
-  deleteEgresoFuturo
+  deleteEgresoFuturo,
+  // Nuevas funciones para Lotes
+  getAllLotes,
+  createLote,
+  updateLote,
+  deleteLote
 } from './services/dataService';
 import { getFinancialAdvice } from './services/geminiService';
 import { 
@@ -76,7 +85,7 @@ const App = () => {
   const [loading, setLoading] = useState(false);
 
   // --- App State ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'notes' | 'users' | 'documents' | 'logs' | 'clientes' | 'egresos-futuros'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'notes' | 'users' | 'documents' | 'logs' | 'clientes' | 'egresos-futuros' | 'lotes'>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -92,6 +101,7 @@ const App = () => {
     clientesActuales: ClienteActual[];
     pagosClientes: PagoCliente[];
     egresosFuturos: EgresoFuturo[];
+    lotes: Lote[];
   }>({
     transactions: [],
     notes: [],
@@ -101,7 +111,8 @@ const App = () => {
     clientesInteresados: [],
     clientesActuales: [],
     pagosClientes: [],
-    egresosFuturos: []
+    egresosFuturos: [],
+    lotes: []
   });
 
   // --- Initial Load ---
@@ -112,16 +123,18 @@ const App = () => {
         console.log('Iniciando carga de datos...');
         
         // Cargar todos los datos en paralelo
-        const [basedData, clientesInt, clientesAct, pagos, egresos] = await Promise.all([
+        const [basedData, clientesInt, clientesAct, pagos, egresos, lotes] = await Promise.all([
           fetchAllData(),
           getAllClientesInteresados(),
           getAllClientesActuales(),
           getAllPagosClientes(),
-          getAllEgresosFuturos()
+          getAllEgresosFuturos(),
+          getAllLotes()
         ]);
 
         console.log('Datos cargados:');
         console.log('Clientes actuales:', clientesAct);
+        console.log('Lotes:', lotes);
         console.log('Base data:', basedData);
 
         // Combinar todos los datos
@@ -130,7 +143,8 @@ const App = () => {
           clientesInteresados: clientesInt || [],
           clientesActuales: clientesAct || [],
           pagosClientes: pagos || [],
-          egresosFuturos: egresos || []
+          egresosFuturos: egresos || [],
+          lotes: lotes || []
         };
 
         console.log('Estado final:', nuevoData);
@@ -143,7 +157,8 @@ const App = () => {
           clientesInteresados: [],
           clientesActuales: [],
           pagosClientes: [],
-          egresosFuturos: []
+          egresosFuturos: [],
+          lotes: []
         }));
       } finally {
         setLoading(false);
@@ -542,6 +557,149 @@ const App = () => {
     }
   };
 
+  // --- HANDLERS PARA LOTES ---
+  const handleAddLote = async (lote: Omit<Lote, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const nuevoLote: Lote = {
+      ...lote,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    setData(prev => ({ ...prev, lotes: [nuevoLote, ...prev.lotes] }));
+    try {
+      await createLote(nuevoLote);
+      logAction('Agregar lote', `Lote #${lote.numeroLote} - Estado: ${lote.estado}`);
+    } catch (e) {
+      console.error(e);
+      alert('Error guardando lote');
+    }
+  };
+
+  const handleEditLote = async (id: string, updates: Partial<Lote>) => {
+    setData(prev => ({
+      ...prev,
+      lotes: prev.lotes.map(l => l.id === id ? { ...l, ...updates } : l)
+    }));
+    try {
+      await updateLote(id, updates);
+      logAction('Actualizar lote', `ID: ${id}`);
+    } catch (e) {
+      console.error(e);
+      alert('Error actualizando lote');
+    }
+  };
+
+  const handleDeleteLote = async (id: string) => {
+    if (window.confirm('¿Está seguro de que desea eliminar este lote?')) {
+      setData(prev => ({ ...prev, lotes: prev.lotes.filter(l => l.id !== id) }));
+      try {
+        await deleteLote(id);
+        logAction('Eliminar lote', `ID: ${id}`);
+      } catch (e) {
+        console.error(e);
+        alert('Error eliminando lote');
+      }
+    }
+  };
+
+  // ✅ NUEVO HANDLER: Reservar/Vender Lote
+  const handleReservarVenderLote = async (
+    loteId: string,
+    numeroLote: string,
+    clienteData: {
+      nombre: string;
+      email?: string;
+      telefono?: string;
+      valorLote: number;
+      depositoInicial: number;
+      saldoRestante: number;
+      numeroCuotas: number;
+      valorCuota: number;
+      saldoFinal: number;
+      formaPagoInicial?: string;
+      formaPagoCuotas?: string;
+      documentoCompraventa?: string;
+      estado: 'activo';
+    },
+    pagoInicial: number,
+    estado: 'reservado' | 'vendido'
+  ) => {
+    try {
+      // 1. Crear el cliente
+      const nuevoCliente: ClienteActual = {
+        id: crypto.randomUUID(),
+        nombre: clienteData.nombre,
+        email: clienteData.email || '',
+        telefono: clienteData.telefono || '',
+        numeroLote: numeroLote,
+        valorLote: clienteData.valorLote,
+        depositoInicial: clienteData.depositoInicial,
+        saldoRestante: clienteData.saldoRestante,
+        numeroCuotas: clienteData.numeroCuotas,
+        valorCuota: clienteData.valorCuota,
+        saldoFinal: clienteData.saldoFinal,
+        formaPagoInicial: clienteData.formaPagoInicial,
+        formaPagoCuotas: clienteData.formaPagoCuotas,
+        documentoCompraventa: clienteData.documentoCompraventa,
+        estado: clienteData.estado,
+        createdAt: new Date().toISOString()
+      };
+
+      await createClienteActual(nuevoCliente);
+
+      // 2. Actualizar lote
+      const updateLoteData: Partial<Lote> = {
+        estado: estado,
+        clienteId: nuevoCliente.id,
+        descripcion: `${estado === 'reservado' ? 'Reservado' : 'Vendido'} a ${clienteData.nombre} - Inicial: $${pagoInicial.toLocaleString()}`,
+        updatedAt: new Date().toISOString()
+      };
+
+      await updateLote(loteId, updateLoteData);
+
+      // 3. Registrar pago inicial
+      if (pagoInicial > 0) {
+        const nuevoPago: PagoCliente = {
+          id: crypto.randomUUID(),
+          clienteId: nuevoCliente.id,
+          fechaPago: new Date().toISOString(),
+          monto: pagoInicial,
+          tipoPago: estado === 'reservado' ? 'Depósito de Reserva' : 'Cuota Inicial',
+          formaPago: clienteData.formaPagoInicial || 'Efectivo',
+          documentoAdjunto: null,
+          notas: `Pago inicial por ${estado === 'reservado' ? 'reserva' : 'compra'} del Lote #${numeroLote}`,
+          createdAt: new Date().toISOString()
+        };
+
+        await createPagoCliente(nuevoPago);
+
+        setData(prev => ({
+          ...prev,
+          pagosClientes: [nuevoPago, ...prev.pagosClientes]
+        }));
+      }
+
+      // 4. Actualizar estados locales
+      setData(prev => ({
+        ...prev,
+        clientesActuales: [nuevoCliente, ...prev.clientesActuales],
+        lotes: prev.lotes.map(l => l.id === loteId ? { ...l, ...updateLoteData } : l)
+      }));
+
+      // 5. Log
+      await logAction(
+        `${estado === 'reservado' ? 'Reservar' : 'Vender'} Lote`,
+        `Lote #${numeroLote} ${estado} a ${clienteData.nombre} - Inicial: $${pagoInicial.toLocaleString()}`
+      );
+
+      return { success: true, clienteId: nuevoCliente.id };
+
+    } catch (error) {
+      console.error('Error en handleReservarVenderLote:', error);
+      throw error;
+    }
+  };
+
   // --- Render ---
 
   if (loading) {
@@ -630,6 +788,7 @@ const App = () => {
           <SidebarItem icon={<LayoutDashboard size={20}/>} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
           <SidebarItem icon={<Receipt size={20}/>} label="Transacciones" active={activeTab === 'transactions'} onClick={() => setActiveTab('transactions')} />
           <SidebarItem icon={<UserCheck size={20}/>} label="Clientes" active={activeTab === 'clientes'} onClick={() => setActiveTab('clientes')} />
+          <SidebarItem icon={<MapPin size={20}/>} label="Mapa de Lotes" active={activeTab === 'lotes'} onClick={() => setActiveTab('lotes')} />
           <SidebarItem icon={<Calendar size={20}/>} label="Egresos Futuros" active={activeTab === 'egresos-futuros'} onClick={() => setActiveTab('egresos-futuros')} />
           <SidebarItem icon={<FileText size={20}/>} label="Documentos" active={activeTab === 'documents'} onClick={() => setActiveTab('documents')} />
           <SidebarItem icon={<StickyNote size={20}/>} label="Notas & Temas" active={activeTab === 'notes'} onClick={() => setActiveTab('notes')} />
@@ -685,6 +844,7 @@ const App = () => {
            <SidebarItem icon={<LayoutDashboard size={20}/>} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<Receipt size={20}/>} label="Transacciones" active={activeTab === 'transactions'} onClick={() => { setActiveTab('transactions'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<UserCheck size={20}/>} label="Clientes" active={activeTab === 'clientes'} onClick={() => { setActiveTab('clientes'); setMobileMenuOpen(false); }} />
+           <SidebarItem icon={<MapPin size={20}/>} label="Mapa de Lotes" active={activeTab === 'lotes'} onClick={() => { setActiveTab('lotes'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<Calendar size={20}/>} label="Egresos Futuros" active={activeTab === 'egresos-futuros'} onClick={() => { setActiveTab('egresos-futuros'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<FileText size={20}/>} label="Documentos" active={activeTab === 'documents'} onClick={() => { setActiveTab('documents'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<StickyNote size={20}/>} label="Notas & Temas" active={activeTab === 'notes'} onClick={() => { setActiveTab('notes'); setMobileMenuOpen(false); }} />
@@ -707,6 +867,7 @@ const App = () => {
               {activeTab === 'dashboard' && 'Resumen Financiero'}
               {activeTab === 'transactions' && 'Movimientos'}
               {activeTab === 'clientes' && 'Gestión de Clientes'}
+              {activeTab === 'lotes' && 'Mapa de Lotes'}
               {activeTab === 'egresos-futuros' && 'Egresos Futuros'}
               {activeTab === 'notes' && 'Gestión de Temas'}
               {activeTab === 'documents' && 'Gestión Documental'}
@@ -779,6 +940,20 @@ const App = () => {
               onAddPagoCliente={handleAddPagoCliente}
               onDeletePagoCliente={handleDeletePagoCliente}
               currentUser={currentUser}
+            />
+          )}
+
+          {activeTab === 'lotes' && (
+            <MapaLotes
+              lotes={data.lotes}
+              clientesActuales={data.clientesActuales}
+              pagosClientes={data.pagosClientes}
+              onSelectLote={(lote) => console.log('Lote seleccionado:', lote)}
+              onEditLote={handleEditLote}
+              onDeleteLote={handleDeleteLote}
+              onAddLote={handleAddLote}
+              onReservarVenderLote={handleReservarVenderLote}
+              editMode={currentUser?.role === 'admin'}
             />
           )}
 
