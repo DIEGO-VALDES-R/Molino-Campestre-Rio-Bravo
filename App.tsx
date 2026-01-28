@@ -1,6 +1,3 @@
-import MapaLotes from './components/MapaLotes';
-import GestionLotes from './components/GestionLotes';
-import { Lote } from './types';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, 
@@ -17,7 +14,8 @@ import {
   Lock,
   UserCheck,
   Calendar,
-  MapPin
+  MapPin,
+  Building2
 } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { TransactionList } from './components/TransactionList';
@@ -26,6 +24,10 @@ import { DocumentsView } from './components/DocumentsView';
 import { AuditLogView } from './components/AuditLogView';
 import ClientesView from './components/ClientesView';
 import EgresosFuturosView from './components/EgresosFuturosView';
+import MapaLotes from './components/MapaLotes';
+import { GestionObrasView } from './components/GestionObrasView';
+import { Obra, EtapaObra } from './obra-tipos';
+import { Lote } from './types';
 import { 
   fetchAllData,
   apiCreateTransaction,
@@ -38,7 +40,6 @@ import {
   apiCreateDocument,
   apiDeleteDocument,
   apiCreateLog,
-  // Nuevas funciones para Clientes
   getAllClientesInteresados,
   createClienteInteresado,
   updateClienteInteresado,
@@ -51,12 +52,10 @@ import {
   getAllPagosClientes,
   createPagoCliente,
   deletePagoCliente,
-  // Nuevas funciones para Egresos Futuros
   getAllEgresosFuturos,
   createEgresoFuturo,
   updateEgresoFuturo,
   deleteEgresoFuturo,
-  // Nuevas funciones para Lotes
   getAllLotes,
   createLote,
   updateLote,
@@ -85,10 +84,11 @@ const App = () => {
   const [loading, setLoading] = useState(false);
 
   // --- App State ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'notes' | 'users' | 'documents' | 'logs' | 'clientes' | 'egresos-futuros' | 'lotes'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'notes' | 'users' | 'documents' | 'logs' | 'clientes' | 'egresos-futuros' | 'lotes' | 'obras'>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [obras, setObras] = useState<Obra[]>([]);
 
   // --- Data ---
   const [data, setData] = useState<{
@@ -122,7 +122,6 @@ const App = () => {
       try {
         console.log('Iniciando carga de datos...');
         
-        // Cargar todos los datos en paralelo
         const [basedData, clientesInt, clientesAct, pagos, egresos, lotes] = await Promise.all([
           fetchAllData(),
           getAllClientesInteresados(),
@@ -132,12 +131,6 @@ const App = () => {
           getAllLotes()
         ]);
 
-        console.log('Datos cargados:');
-        console.log('Clientes actuales:', clientesAct);
-        console.log('Lotes:', lotes);
-        console.log('Base data:', basedData);
-
-        // Combinar todos los datos
         const nuevoData = {
           ...basedData,
           clientesInteresados: clientesInt || [],
@@ -147,11 +140,9 @@ const App = () => {
           lotes: lotes || []
         };
 
-        console.log('Estado final:', nuevoData);
         setData(nuevoData);
       } catch (error) {
         console.error('Error loading data:', error);
-        // Asegurar que al menos el estado base esté disponible
         setData(prev => ({
           ...prev,
           clientesInteresados: [],
@@ -193,17 +184,14 @@ const App = () => {
       action,
       details
     };
-    // Update UI immediately
     setData(prev => ({ ...prev, logs: [newLog, ...prev.logs] }));
-    // Send to DB
     await apiCreateLog(newLog);
   };
 
-  // --- Handlers Existentes ---
+  // --- Handlers ---
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 1. Try to find user in the fetched data (from DB)
     const dbUser = data.users.find(u => u.name === loginEmail || u.email === loginEmail);
     
     if (dbUser) {
@@ -217,7 +205,6 @@ const App = () => {
       }
     }
 
-    // 2. Fallback: Hardcoded Demo Admin
     if ((loginEmail === 'Administrador' || loginEmail === 'admin') && loginPassword === 'admin') {
        const demoUser: User = {
          id: 'demo-admin-id',
@@ -381,7 +368,7 @@ const App = () => {
     logAction("Consulta IA", "Se solicitó análisis financiero");
   };
 
-  // --- Nuevos Handlers para Clientes ---
+  // --- Handlers para Clientes ---
   const handleAddClienteInteresado = async (cliente: Omit<ClienteInteresado, 'id' | 'createdAt'>) => {
     const nuevoCliente: ClienteInteresado = {
       ...cliente,
@@ -403,16 +390,12 @@ const App = () => {
     clienteData: Omit<ClienteActual, 'id' | 'createdAt'>
   ) => {
     try {
-      // Convertir el cliente en la BD (esto ya borra de interesados)
       const nuevoCliente = await convertInteresadoToActual(interesadoId, clienteData);
-      
-      // Actualizar UI: quitar de interesados y agregar a actuales
       setData(prev => ({
         ...prev,
         clientesInteresados: prev.clientesInteresados.filter(c => c.id !== interesadoId),
         clientesActuales: [nuevoCliente, ...prev.clientesActuales]
       }));
-      
       logAction('Convertir cliente', `${clienteData.nombre} - Lote ${clienteData.numeroLote}`);
     } catch (e) {
       console.error(e);
@@ -459,16 +442,12 @@ const App = () => {
   const handleDeleteClienteActual = async (id: string) => {
     if (window.confirm('¿Eliminar este cliente? Se eliminarán también todos sus pagos.')) {
       try {
-        // Eliminar de BD
         await deleteClienteActual(id);
-        
-        // Actualizar estado local
         setData(prev => ({
           ...prev,
           clientesActuales: prev.clientesActuales.filter(c => c.id !== id),
           pagosClientes: prev.pagosClientes.filter(p => p.clienteId !== id)
         }));
-        
         logAction('Eliminar cliente actual', `ID: ${id}`);
       } catch (e) {
         console.error(e);
@@ -486,11 +465,8 @@ const App = () => {
     setData(prev => ({ ...prev, pagosClientes: [nuevoPago, ...prev.pagosClientes] }));
     try {
       await createPagoCliente(nuevoPago);
-      
-      // Actualizar cliente
       const clientesAct = await getAllClientesActuales();
       setData(prev => ({ ...prev, clientesActuales: clientesAct || [] }));
-      
       logAction('Registrar pago', `Monto: $${pago.monto}`);
     } catch (e) {
       console.error(e);
@@ -503,11 +479,8 @@ const App = () => {
       setData(prev => ({ ...prev, pagosClientes: prev.pagosClientes.filter(p => p.id !== id) }));
       try {
         await deletePagoCliente(id);
-        
-        // Actualizar cliente
         const clientesAct = await getAllClientesActuales();
         setData(prev => ({ ...prev, clientesActuales: clientesAct || [] }));
-        
         logAction('Eliminar pago', `ID: ${id}`);
       } catch (e) {
         console.error(e);
@@ -515,7 +488,7 @@ const App = () => {
     }
   };
 
-  // --- Nuevos Handlers para Egresos Futuros ---
+  // --- Handlers para Egresos Futuros ---
   const handleAddEgresoFuturo = async (egreso: Omit<EgresoFuturo, 'id' | 'createdAt'>) => {
     const nuevoEgreso: EgresoFuturo = {
       ...egreso,
@@ -557,7 +530,7 @@ const App = () => {
     }
   };
 
-  // --- HANDLERS PARA LOTES ---
+  // --- Handlers para Lotes ---
   const handleAddLote = async (lote: Omit<Lote, 'id' | 'createdAt' | 'updatedAt'>) => {
     const nuevoLote: Lote = {
       ...lote,
@@ -602,30 +575,14 @@ const App = () => {
     }
   };
 
-  // ✅ NUEVO HANDLER: Reservar/Vender Lote
   const handleReservarVenderLote = async (
     loteId: string,
     numeroLote: string,
-    clienteData: {
-      nombre: string;
-      email?: string;
-      telefono?: string;
-      valorLote: number;
-      depositoInicial: number;
-      saldoRestante: number;
-      numeroCuotas: number;
-      valorCuota: number;
-      saldoFinal: number;
-      formaPagoInicial?: string;
-      formaPagoCuotas?: string;
-      documentoCompraventa?: string;
-      estado: 'activo';
-    },
+    clienteData: any,
     pagoInicial: number,
     estado: 'reservado' | 'vendido'
   ) => {
     try {
-      // 1. Crear el cliente
       const nuevoCliente: ClienteActual = {
         id: crypto.randomUUID(),
         nombre: clienteData.nombre,
@@ -647,7 +604,6 @@ const App = () => {
 
       await createClienteActual(nuevoCliente);
 
-      // 2. Actualizar lote
       const updateLoteData: Partial<Lote> = {
         estado: estado,
         clienteId: nuevoCliente.id,
@@ -657,7 +613,6 @@ const App = () => {
 
       await updateLote(loteId, updateLoteData);
 
-      // 3. Registrar pago inicial
       if (pagoInicial > 0) {
         const nuevoPago: PagoCliente = {
           id: crypto.randomUUID(),
@@ -679,14 +634,12 @@ const App = () => {
         }));
       }
 
-      // 4. Actualizar estados locales
       setData(prev => ({
         ...prev,
         clientesActuales: [nuevoCliente, ...prev.clientesActuales],
         lotes: prev.lotes.map(l => l.id === loteId ? { ...l, ...updateLoteData } : l)
       }));
 
-      // 5. Log
       await logAction(
         `${estado === 'reservado' ? 'Reservar' : 'Vender'} Lote`,
         `Lote #${numeroLote} ${estado} a ${clienteData.nombre} - Inicial: $${pagoInicial.toLocaleString()}`
@@ -700,13 +653,38 @@ const App = () => {
     }
   };
 
+  // --- Handlers para Obras ---
+  const handleAddObra = async (obra: Omit<Obra, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const nuevaObra: Obra = {
+      ...obra,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    setObras([...obras, nuevaObra]);
+    await logAction('Crear Obra', `Obra: ${obra.nombre} - Etapa: ${obra.etapaActual}`);
+  };
+
+  const handleUpdateObra = async (id: string, updates: Partial<Obra>) => {
+    setObras(obras.map(o => o.id === id ? { ...o, ...updates, updatedAt: new Date().toISOString() } : o));
+    await logAction('Actualizar Obra', `Obra ID: ${id}`);
+  };
+
+  const handleDeleteObra = async (id: string) => {
+    if (window.confirm('¿Está seguro de que desea eliminar esta obra?')) {
+      const obra = obras.find(o => o.id === id);
+      setObras(obras.filter(o => o.id !== id));
+      await logAction('Eliminar Obra', `Obra: ${obra?.nombre}`);
+    }
+  };
+
   // --- Render ---
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div>
-        <span className="ml-3 text-brand-700 font-medium">Cargando datos...</span>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <span className="ml-3 text-blue-700 font-medium">Cargando datos...</span>
       </div>
     );
   }
@@ -717,11 +695,11 @@ const App = () => {
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-brand-600 rounded-2xl flex items-center justify-center mx-auto mb-4 text-white text-3xl shadow-lg shadow-brand-500/30">
+            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 text-white text-3xl shadow-lg">
               🌾
             </div>
             <h1 className="text-2xl font-bold text-slate-900">Molino Campestre</h1>
-            <h2 className="text-lg text-brand-600 font-medium">Rio Bravo</h2>
+            <h2 className="text-lg text-blue-600 font-medium">Rio Bravo</h2>
             <p className="text-slate-500 text-sm mt-2">Sistema de Gestión Integral</p>
           </div>
 
@@ -732,7 +710,7 @@ const App = () => {
                 type="text" 
                 value={loginEmail}
                 onChange={e => setLoginEmail(e.target.value)}
-                className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                 placeholder="Ingrese su usuario"
               />
             </div>
@@ -742,7 +720,7 @@ const App = () => {
                 type="password" 
                 value={loginPassword}
                 onChange={e => setLoginPassword(e.target.value)}
-                className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                 placeholder="Ingrese su contraseña"
               />
             </div>
@@ -751,16 +729,16 @@ const App = () => {
               <p className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{authError}</p>
             )}
 
-            <button type="submit" className="w-full bg-brand-600 text-white py-3 rounded-lg font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20">
+            <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition-all shadow-lg">
               Iniciar Sesión
             </button>
             
-            <button type="button" onClick={handleRecoverPassword} className="w-full text-slate-500 text-sm hover:text-brand-600 transition-colors">
+            <button type="button" onClick={handleRecoverPassword} className="w-full text-slate-500 text-sm hover:text-blue-600 transition-colors">
               ¿Olvidó su contraseña?
             </button>
           </form>
           <div className="mt-8 text-center text-xs text-slate-400">
-             <p>Usuario demo por defecto: <span className="font-mono bg-slate-100 px-1 rounded">Administrador</span></p>
+             <p>Usuario demo: <span className="font-mono bg-slate-100 px-1 rounded">Administrador</span></p>
              <p>Contraseña: <span className="font-mono bg-slate-100 px-1 rounded">admin</span></p>
           </div>
         </div>
@@ -768,7 +746,7 @@ const App = () => {
     );
   }
 
-  // --- Main App Render ---
+  // --- Main App ---
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
       
@@ -776,7 +754,7 @@ const App = () => {
       <aside className="hidden md:flex flex-col w-64 bg-slate-900 text-white fixed h-full z-10 shadow-xl">
         <div className="p-6">
           <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
               <span className="text-lg">🌾</span>
             </div>
             Molino Campestre
@@ -790,6 +768,7 @@ const App = () => {
           <SidebarItem icon={<UserCheck size={20}/>} label="Clientes" active={activeTab === 'clientes'} onClick={() => setActiveTab('clientes')} />
           <SidebarItem icon={<MapPin size={20}/>} label="Mapa de Lotes" active={activeTab === 'lotes'} onClick={() => setActiveTab('lotes')} />
           <SidebarItem icon={<Calendar size={20}/>} label="Egresos Futuros" active={activeTab === 'egresos-futuros'} onClick={() => setActiveTab('egresos-futuros')} />
+          <SidebarItem icon={<Building2 size={20}/>} label="Gestión de Obras" active={activeTab === 'obras'} onClick={() => setActiveTab('obras')} />
           <SidebarItem icon={<FileText size={20}/>} label="Documentos" active={activeTab === 'documents'} onClick={() => setActiveTab('documents')} />
           <SidebarItem icon={<StickyNote size={20}/>} label="Notas & Temas" active={activeTab === 'notes'} onClick={() => setActiveTab('notes')} />
           <SidebarItem icon={<Activity size={20}/>} label="Bitácora" active={activeTab === 'logs'} onClick={() => setActiveTab('logs')} />
@@ -801,7 +780,7 @@ const App = () => {
         <div className="p-4 border-t border-slate-800 space-y-4">
            <div className="bg-slate-800 rounded-lg p-4">
              <div className="flex items-center gap-3 mb-2">
-               <div className="p-2 bg-brand-500/20 rounded-full text-brand-400">
+               <div className="p-2 bg-blue-500/20 rounded-full text-blue-400">
                  <Bot size={18} />
                </div>
                <span className="font-semibold text-sm">Asesor IA</span>
@@ -810,7 +789,7 @@ const App = () => {
              <button 
                 onClick={handleAIAnalysis}
                 disabled={isAnalyzing}
-                className="w-full py-2 bg-brand-600 hover:bg-brand-500 text-xs font-bold rounded text-white transition-colors disabled:opacity-50"
+                className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-xs font-bold rounded text-white transition-colors disabled:opacity-50"
              >
                {isAnalyzing ? 'Analizando...' : 'Analizar Ahora'}
              </button>
@@ -828,7 +807,7 @@ const App = () => {
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 w-full bg-slate-900 text-white z-20 px-4 py-3 flex justify-between items-center shadow-md">
         <span className="font-bold flex items-center gap-2">
-           <div className="w-6 h-6 bg-brand-500 rounded flex items-center justify-center">
+           <div className="w-6 h-6 bg-blue-500 rounded flex items-center justify-center">
               <span className="text-xs">🌾</span>
             </div>
           Molino Rio Bravo
@@ -838,7 +817,7 @@ const App = () => {
         </button>
       </div>
 
-      {/* Mobile Menu Overlay */}
+      {/* Mobile Menu */}
       {mobileMenuOpen && (
         <div className="fixed inset-0 bg-slate-900 z-10 pt-16 px-4 pb-8 space-y-4 md:hidden animate-fade-in overflow-y-auto">
            <SidebarItem icon={<LayoutDashboard size={20}/>} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} />
@@ -846,6 +825,7 @@ const App = () => {
            <SidebarItem icon={<UserCheck size={20}/>} label="Clientes" active={activeTab === 'clientes'} onClick={() => { setActiveTab('clientes'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<MapPin size={20}/>} label="Mapa de Lotes" active={activeTab === 'lotes'} onClick={() => { setActiveTab('lotes'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<Calendar size={20}/>} label="Egresos Futuros" active={activeTab === 'egresos-futuros'} onClick={() => { setActiveTab('egresos-futuros'); setMobileMenuOpen(false); }} />
+           <SidebarItem icon={<Building2 size={20}/>} label="Gestión de Obras" active={activeTab === 'obras'} onClick={() => { setActiveTab('obras'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<FileText size={20}/>} label="Documentos" active={activeTab === 'documents'} onClick={() => { setActiveTab('documents'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<StickyNote size={20}/>} label="Notas & Temas" active={activeTab === 'notes'} onClick={() => { setActiveTab('notes'); setMobileMenuOpen(false); }} />
            <SidebarItem icon={<Activity size={20}/>} label="Bitácora" active={activeTab === 'logs'} onClick={() => { setActiveTab('logs'); setMobileMenuOpen(false); }} />
@@ -860,7 +840,7 @@ const App = () => {
 
       {/* Main Content */}
       <main className="flex-1 md:ml-64 p-6 pt-20 md:pt-6 overflow-x-hidden">
-        {/* Header Section */}
+        {/* Header */}
         <header className="mb-8 flex justify-between items-end">
           <div>
             <h2 className="text-2xl font-bold text-slate-900">
@@ -869,6 +849,7 @@ const App = () => {
               {activeTab === 'clientes' && 'Gestión de Clientes'}
               {activeTab === 'lotes' && 'Mapa de Lotes'}
               {activeTab === 'egresos-futuros' && 'Egresos Futuros'}
+              {activeTab === 'obras' && '🏗️ Gestión de Obras'}
               {activeTab === 'notes' && 'Gestión de Temas'}
               {activeTab === 'documents' && 'Gestión Documental'}
               {activeTab === 'logs' && 'Registro de Actividad'}
@@ -880,9 +861,9 @@ const App = () => {
           </div>
         </header>
 
-        {/* AI Analysis Result Box */}
+        {/* AI Analysis */}
         {aiAnalysis && (
-          <div className="mb-8 bg-gradient-to-r from-brand-50 to-indigo-50 border border-brand-100 p-6 rounded-xl relative">
+          <div className="mb-8 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-6 rounded-xl relative">
             <button 
               onClick={() => setAiAnalysis(null)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
@@ -890,7 +871,7 @@ const App = () => {
               <X size={18} />
             </button>
             <div className="flex items-start gap-4">
-               <div className="p-2 bg-white rounded-full shadow-sm text-brand-600 mt-1">
+               <div className="p-2 bg-white rounded-full shadow-sm text-blue-600 mt-1">
                  <Bot size={24} />
                </div>
                <div className="flex-1">
@@ -967,6 +948,16 @@ const App = () => {
             />
           )}
 
+          {activeTab === 'obras' && (
+            <GestionObrasView
+              obras={obras}
+              onAddObra={handleAddObra}
+              onUpdateObra={handleUpdateObra}
+              onDeleteObra={handleDeleteObra}
+              currentUser={currentUser}
+            />
+          )}
+
           {activeTab === 'documents' && (
             <DocumentsView 
               documents={data.documents}
@@ -1001,7 +992,7 @@ const App = () => {
                       const pass = prompt("Contraseña:");
                       if(name && pass) addUser(name, pass, email);
                     }}
-                    className="text-sm bg-brand-600 text-white px-3 py-1.5 rounded-lg hover:bg-brand-700 flex items-center gap-1"
+                    className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 flex items-center gap-1"
                   >
                     <Plus size={16}/> Agregar
                   </button>
@@ -1041,13 +1032,13 @@ const App = () => {
   );
 };
 
-// Helper Component for Sidebar
+// Sidebar Item Component
 const SidebarItem = ({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void }) => (
   <button 
     onClick={onClick}
     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
       active 
-        ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' 
+        ? 'bg-blue-600 text-white shadow-lg' 
         : 'text-slate-400 hover:bg-slate-800 hover:text-white'
     }`}
   >
