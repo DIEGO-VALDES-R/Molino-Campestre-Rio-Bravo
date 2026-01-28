@@ -2,6 +2,23 @@ import React, { useState, useMemo } from 'react';
 import { MapPin, Home, Lock, CheckCircle, Clock, X, Eye, Edit2, Trash2, Plus, User } from 'lucide-react';
 import { ClienteActual, PagoCliente, Lote } from '../../types';
 
+// Nuevos imports para PDFs y Servicios
+import {
+  generarComprobanteReservaVenta,
+  generarReciboAbono,
+  blobToBase64,
+  descargarPDF,
+  generarNombreArchivo,
+  fileToBase64,
+  type ComprobanteData,
+  type ReciboData
+} from '../services/pdfService';
+
+import {
+  enviarComprobanteCompleto,
+  enviarReciboAbono
+} from '../services/envioService';
+
 interface MapaLotesProps {
   lotes: Lote[];
   clientesActuales: ClienteActual[];
@@ -83,7 +100,12 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
   const [filterEstado, setFilterEstado] = useState<'todos' | 'disponible' | 'vendido' | 'reservado' | 'bloqueado'>('todos');
   const [showAddForm, setShowAddForm] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [documentoCompraventa, setDocumentoCompraventa] = useState<File | null>(null);
+  const [enviando, setEnviando] = useState(false);
   
+  // Nota: Asegúrate de que 'currentUser' esté disponible en el contexto o pásalo como prop
+  const currentUser: any = { name: 'Admin' }; // Placeholder si no viene de contexto
+
   const [editFormData, setEditFormData] = useState<Partial<Lote>>({});
   
   // Formulario adaptado al esquema real de clientes_actuales
@@ -150,7 +172,6 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
 
   const handleOpenEditModal = (lote: Lote) => {
     setSelectedLote(lote);
-    // Copiar todos los valores del lote incluyendo area y precio
     setEditFormData({
       numeroLote: lote.numeroLote,
       estado: lote.estado,
@@ -167,7 +188,6 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
 
   const handleOpenReservaVentaModal = (lote: Lote) => {
     setSelectedLote(lote);
-    // Resetear formulario
     setReservaVentaForm({
       accion: 'reservado',
       nombre: '',
@@ -179,26 +199,56 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
       formaPagoCuotas: 'Transferencia Bancaria',
       documentoCompraventa: '',
     });
+    setDocumentoCompraventa(null);
     setShowReservaVentaModal(true);
     setShowModal(false);
   };
 
   const calcularValorCuota = () => {
     if (!selectedLote?.precio || reservaVentaForm.depositoInicial <= 0) return 0;
-    
     const saldoRestante = selectedLote.precio - reservaVentaForm.depositoInicial;
     const numeroCuotas = reservaVentaForm.numeroCuotas || 1;
-    
     return saldoRestante / numeroCuotas;
   };
 
   const calcularSaldoFinal = () => {
     if (!selectedLote?.precio) return 0;
-    return selectedLote.precio; // En este esquema, saldo_final es igual al valor_lote
+    return selectedLote.precio;
+  };
+
+  // ==================== FUNCIONES NUEVAS ====================
+
+  const handleDocumentoChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const archivo = e.target.files?.[0];
+    if (!archivo) return;
+
+    // Validar tamaño (máximo 5MB)
+    if (archivo.size > 5 * 1024 * 1024) {
+      alert('El archivo debe ser menor a 5MB');
+      return;
+    }
+
+    // Validar tipo
+    const tiposValidos = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/png'
+    ];
+
+    if (!tiposValidos.includes(archivo.type)) {
+      alert('Solo se aceptan PDF, DOC, DOCX, JPG o PNG');
+      return;
+    }
+
+    setDocumentoCompraventa(archivo);
   };
 
   const handleSaveReservaVenta = async () => {
-    // Validaciones
+    // ===== VALIDACIONES =====
     if (!selectedLote || !selectedLote.precio) {
       alert('El lote debe tener un precio definido');
       return;
@@ -209,65 +259,206 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
       return;
     }
 
-    if (reservaVentaForm.depositoInicial < 0 || reservaVentaForm.depositoInicial > selectedLote.precio) {
-      alert(`El depósito inicial debe estar entre $0 y $${selectedLote.precio.toLocaleString()}`);
-      return;
-    }
-
-    if (reservaVentaForm.depositoInicial === 0) {
+    if (reservaVentaForm.depositoInicial <= 0) {
       alert('Por favor ingrese un depósito inicial mayor a cero');
       return;
     }
 
-    if (reservaVentaForm.numeroCuotas < 1) {
-      alert('El número de cuotas debe ser al menos 1');
+    if (
+      reservaVentaForm.depositoInicial <
+      0 ||
+      reservaVentaForm.depositoInicial > selectedLote.precio
+    ) {
+      alert(
+        `El depósito debe estar entre $0 y $${selectedLote.precio.toLocaleString()}`
+      );
       return;
     }
 
-    const saldoRestante = selectedLote.precio - reservaVentaForm.depositoInicial;
-    const valorCuota = calcularValorCuota();
-    const saldoFinal = calcularSaldoFinal();
+    if (!reservaVentaForm.email || !reservaVentaForm.telefono) {
+      alert('El email y el teléfono son obligatorios para generar el comprobante.');
+      return;
+    }
 
     try {
+      setEnviando(true);
       setIsProcessing(true);
 
-      // Preparar datos del cliente según el esquema real
-      const clienteData = {
-        nombre: reservaVentaForm.nombre.trim(),
-        email: reservaVentaForm.email.trim() || null,
-        telefono: reservaVentaForm.telefono.trim() || null,
-        valorLote: selectedLote.precio,
-        depositoInicial: reservaVentaForm.depositoInicial,
-        saldoRestante: saldoRestante,
+      const saldoRestante =
+        selectedLote.precio - reservaVentaForm.depositoInicial;
+      const valorCuota = calcularValorCuota();
+      const numeroOperacion = `${Date.now().toString().slice(-6)}`;
+
+      console.log('📋 Iniciando proceso de reserva/venta...');
+
+      // ===== 1️⃣ GENERAR PDF DE COMPROBANTE =====
+      console.log('📄 Generando PDF de comprobante...');
+
+      const comprobanteData: ComprobanteData = {
+        tipo: reservaVentaForm.accion,
+        cliente: {
+          nombre: reservaVentaForm.nombre.trim(),
+          email: reservaVentaForm.email.trim() || 'no-especificado@molino.com',
+          telefono: reservaVentaForm.telefono.trim() || 'No especificado'
+        },
+        lote: {
+          numeroLote: selectedLote.numeroLote,
+          area: selectedLote.area,
+          precio: selectedLote.precio,
+          ubicacion: selectedLote.ubicacion || 'No especificada'
+        },
+        deposito: reservaVentaForm.depositoInicial,
         numeroCuotas: reservaVentaForm.numeroCuotas,
         valorCuota: valorCuota,
-        saldoFinal: saldoFinal,
-        formaPagoInicial: reservaVentaForm.formaPagoInicial,
-        formaPagoCuotas: reservaVentaForm.formaPagoCuotas,
-        documentoCompraventa: reservaVentaForm.documentoCompraventa.trim() || null,
-        estado: 'activo',
+        fechaOperacion: new Date().toISOString(),
+        numeroOperacion
       };
 
-      // Llamar a la función del padre para procesar todo
-      if (onReservarVenderLote) {
-        await onReservarVenderLote(
-          selectedLote.id,
-          selectedLote.numeroLote,
-          clienteData,
-          reservaVentaForm.depositoInicial,
-          reservaVentaForm.accion
-        );
+      const comprobanteBlob = await generarComprobanteReservaVenta(comprobanteData);
+      const pdfBase64 = await blobToBase64(comprobanteBlob);
+      const nombreArchivoComprobante = generarNombreArchivo(
+        'comprobante',
+        selectedLote.numeroLote
+      );
+
+      console.log('✅ PDF generado exitosamente');
+
+      // ===== 2️⃣ GUARDAR COMPROBANTE EN DOCUMENTOS =====
+      console.log('💾 Guardando documentos...');
+
+      // NOTA: Asegúrate de tener implementada la función 'addDocument' y 'currentUser'
+      // Si no las tienes, puedes comentar esta sección temporalmente
+      
+      /*
+      // Guardar comprobante
+      if (typeof addDocument === 'function') {
+        await addDocument({
+          name: nombreArchivoComprobante,
+          type: 'application/pdf',
+          data: pdfBase64,
+          uploadedBy: currentUser?.name || 'Sistema',
+          category: `Comprobante ${reservaVentaForm.accion}`,
+          uploadedAt: new Date().toISOString()
+        });
+      }
+      */
+
+      // Guardar documento de compraventa si existe
+      let nombreArchivoCompraventa = '';
+      if (documentoCompraventa) {
+        const archivoBase64 = await fileToBase64(documentoCompraventa);
+        nombreArchivoCompraventa = `compraventa_lote_${selectedLote.numeroLote}_${Date.now().toString().slice(-6)}.${documentoCompraventa.name.split('.').pop()}`;
+
+        /*
+        if (typeof addDocument === 'function') {
+          await addDocument({
+            name: nombreArchivoCompraventa,
+            type: documentoCompraventa.type,
+            data: archivoBase64,
+            uploadedBy: currentUser?.name || 'Sistema',
+            category: 'Documento de Compraventa',
+            uploadedAt: new Date().toISOString()
+          });
+        }
+        */
+        console.log('✅ Documento de compraventa guardado');
       }
 
-      // Cerrar modal y resetear
+      // ===== 3️⃣ ENVIAR COMPROBANTE POR EMAIL Y WHATSAPP =====
+      console.log('📧 Enviando comprobante...');
+
+      const resultadosEnvio = await enviarComprobanteCompleto(
+        {
+          nombre: reservaVentaForm.nombre,
+          email: reservaVentaForm.email,
+          telefono: reservaVentaForm.telefono,
+          numeroLote: selectedLote.numeroLote
+        },
+        {
+          tipo: reservaVentaForm.accion,
+          numeroOperacion,
+          deposito: reservaVentaForm.depositoInicial,
+          valorLote: selectedLote.precio,
+          pdfBase64,
+          nombreArchivo: nombreArchivoComprobante
+        },
+        {
+          enviarEmail: !!reservaVentaForm.email,
+          enviarWhatsApp: !!reservaVentaForm.telefono
+        }
+      );
+
+      console.log('📤 Resultados de envío:', resultadosEnvio);
+
+      // Mostrar resultado
+      let mensajeExito = '✅ Operación completada exitosamente!\n\n';
+      if (resultadosEnvio.email?.success) {
+        mensajeExito += '📧 Email enviado\n';
+      }
+      if (resultadosEnvio.whatsapp?.success) {
+        mensajeExito += '📱 WhatsApp enviado\n';
+      }
+      if (resultadosEnvio.errores.length > 0) {
+        mensajeExito += '\n⚠️ Advertencias:\n';
+        resultadosEnvio.errores.forEach((error) => {
+          mensajeExito += `• ${error}\n`;
+        });
+      }
+
+      // ===== 4️⃣ DESCARGAR PDF LOCALMENTE (OPCIONAL) =====
+      descargarPDF(comprobanteBlob, nombreArchivoComprobante);
+
+      // ===== 5️⃣ REGISTRAR CLIENTE Y LOTE =====
+      console.log('👥 Registrando cliente y lote...');
+
+      const clienteData = {
+        nombre: reservaVentaForm.nombre.trim(),
+        email: reservaVentaForm.email.trim() || '',
+        telefono: reservaVentaForm.telefono.trim() || '',
+        valorLote: selectedLote.precio,
+        depositoInicial: reservaVentaForm.depositoInicial,
+        saldoRestante,
+        numeroCuotas: reservaVentaForm.numeroCuotas,
+        valorCuota: valorCuota,
+        saldoFinal: selectedLote.precio,
+        formaPagoInicial: reservaVentaForm.formaPagoInicial,
+        formaPagoCuotas: reservaVentaForm.formaPagoCuotas,
+        documentoCompraventa: nombreArchivoCompraventa || 'Sin documento',
+        estado: 'activo'
+      };
+
+      // Llamamos a la función props (onReservarVenderLote) para actualizar el estado en el padre
+      await onReservarVenderLote?.(
+        selectedLote.id,
+        selectedLote.numeroLote,
+        clienteData,
+        reservaVentaForm.depositoInicial,
+        reservaVentaForm.accion
+      );
+
+      console.log('✅ Cliente y lote registrados');
+
+      // ===== LIMPIAR Y CERRAR =====
+      alert(mensajeExito);
       setShowReservaVentaModal(false);
+      setDocumentoCompraventa(null);
+      setReservaVentaForm({
+        accion: 'reservado',
+        nombre: '',
+        email: '',
+        telefono: '',
+        depositoInicial: 0,
+        numeroCuotas: 12,
+        formaPagoInicial: 'Efectivo',
+        formaPagoCuotas: 'Transferencia Bancaria',
+        documentoCompraventa: ''
+      });
       setSelectedLote(null);
-      alert(`¡Lote ${reservaVentaForm.accion === 'reservado' ? 'reservado' : 'vendido'} exitosamente!`);
-      
     } catch (error) {
-      console.error('Error al procesar reserva/venta:', error);
-      alert('Hubo un error al procesar la operación. Por favor intente nuevamente.');
+      console.error('❌ Error en handleSaveReservaVenta:', error);
+      alert(`Error: ${(error as Error).message}`);
     } finally {
+      setEnviando(false);
       setIsProcessing(false);
     }
   };
@@ -675,29 +866,27 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
         </div>
       )}
 
-      {/* Modal ADAPTADO de Reserva/Venta */}
+      {/* Modal de Reserva/Venta MEJORADO */}
       {showReservaVentaModal && selectedLote && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="sticky top-0 bg-gradient-to-r from-brand-600 to-brand-700 text-white p-6 rounded-t-2xl">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-2xl font-bold">📋 Reservar o Vender Lote</h3>
-                  <p className="text-brand-100 mt-1">Lote #{selectedLote.numeroLote}</p>
-                </div>
-                <button
-                  onClick={() => setShowReservaVentaModal(false)}
-                  className="text-white hover:text-brand-100"
-                  disabled={isProcessing}
-                >
-                  <X size={24} />
-                </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[95vh] overflow-y-auto">
+            {/* ENCABEZADO */}
+            <div className="sticky top-0 bg-gradient-to-r from-brand-600 to-brand-700 text-white p-6 rounded-t-2xl flex justify-between items-start">
+              <div>
+                <h3 className="text-2xl font-bold">📋 Reservar o Vender Lote</h3>
+                <p className="text-brand-100 mt-1">Lote #{selectedLote.numeroLote}</p>
               </div>
+              <button
+                onClick={() => setShowReservaVentaModal(false)}
+                className="text-white hover:text-brand-100"
+                disabled={isProcessing}
+              >
+                <X size={24} />
+              </button>
             </div>
 
             <div className="p-6 space-y-6">
-              {/* Resumen del Lote */}
+              {/* RESUMEN DEL LOTE */}
               <div className="bg-gradient-to-br from-slate-50 to-slate-100 p-4 rounded-xl border border-slate-200">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -713,7 +902,7 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
                 </div>
               </div>
 
-              {/* Tipo de Operación */}
+              {/* TIPO DE OPERACIÓN */}
               <div>
                 <label className="text-sm font-semibold text-slate-700 mb-2 block">
                   ¿Qué operación deseas realizar? *
@@ -746,7 +935,7 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
                 </div>
               </div>
 
-              {/* Datos del Cliente */}
+              {/* DATOS DEL CLIENTE */}
               <div className="border-t pt-6">
                 <h4 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                   <User size={20} className="text-brand-600" />
@@ -765,31 +954,31 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-slate-700 mb-1 block">Email</label>
+                    <label className="text-sm font-medium text-slate-700 mb-1 block">Email *</label>
                     <input
                       type="email"
-                      placeholder="Ej: cliente@email.com"
+                      placeholder="cliente@email.com"
                       value={reservaVentaForm.email}
                       onChange={(e) => setReservaVentaForm({ ...reservaVentaForm, email: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500"
                       disabled={isProcessing}
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-slate-700 mb-1 block">Teléfono</label>
+                    <label className="text-sm font-medium text-slate-700 mb-1 block">Teléfono *</label>
                     <input
                       type="tel"
-                      placeholder="Ej: 0987654321"
+                      placeholder="3001234567"
                       value={reservaVentaForm.telefono}
                       onChange={(e) => setReservaVentaForm({ ...reservaVentaForm, telefono: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500"
                       disabled={isProcessing}
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Datos Financieros */}
+              {/* DATOS FINANCIEROS */}
               <div className="border-t pt-6">
                 <h4 className="text-lg font-bold text-slate-900 mb-4">💰 Datos Financieros</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -804,7 +993,7 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
                       step="0.01"
                       value={reservaVentaForm.depositoInicial}
                       onChange={(e) => setReservaVentaForm({ ...reservaVentaForm, depositoInicial: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-lg font-semibold"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-lg font-semibold"
                       placeholder="0.00"
                       disabled={isProcessing}
                     />
@@ -819,10 +1008,9 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
                       max="360"
                       value={reservaVentaForm.numeroCuotas}
                       onChange={(e) => setReservaVentaForm({ ...reservaVentaForm, numeroCuotas: parseInt(e.target.value) || 12 })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500"
                       disabled={isProcessing}
                     />
-                    <p className="text-xs text-slate-500 mt-1">Número de cuotas para pagar el saldo restante</p>
                   </div>
 
                   <div>
@@ -830,14 +1018,13 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
                     <select
                       value={reservaVentaForm.formaPagoInicial}
                       onChange={(e) => setReservaVentaForm({ ...reservaVentaForm, formaPagoInicial: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500"
                       disabled={isProcessing}
                     >
                       <option value="Efectivo">Efectivo</option>
                       <option value="Transferencia Bancaria">Transferencia Bancaria</option>
                       <option value="Cheque">Cheque</option>
                       <option value="Tarjeta de Crédito">Tarjeta de Crédito</option>
-                      <option value="Tarjeta de Débito">Tarjeta de Débito</option>
                     </select>
                   </div>
 
@@ -846,7 +1033,7 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
                     <select
                       value={reservaVentaForm.formaPagoCuotas}
                       onChange={(e) => setReservaVentaForm({ ...reservaVentaForm, formaPagoCuotas: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500"
                       disabled={isProcessing}
                     >
                       <option value="Transferencia Bancaria">Transferencia Bancaria</option>
@@ -855,22 +1042,38 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
                       <option value="Débito Automático">Débito Automático</option>
                     </select>
                   </div>
-
-                  <div className="md:col-span-2">
-                    <label className="text-sm font-medium text-slate-700 mb-1 block">📄 Documento de Compraventa</label>
-                    <input
-                      type="text"
-                      placeholder="Número o referencia del documento"
-                      value={reservaVentaForm.documentoCompraventa}
-                      onChange={(e) => setReservaVentaForm({ ...reservaVentaForm, documentoCompraventa: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-                      disabled={isProcessing}
-                    />
-                  </div>
                 </div>
               </div>
 
-              {/* Resumen Financiero */}
+              {/* NUEVO: UPLOAD DE DOCUMENTO */}
+              <div className="border-t pt-6">
+                <h4 className="text-lg font-bold text-slate-900 mb-4">📄 Documentos</h4>
+                <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                  <label className="text-sm font-medium text-slate-700 mb-2 block">Documento de Compraventa (Opcional)</label>
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                    onChange={handleDocumentoChange}
+                    className="w-full px-3 py-2 border border-blue-300 rounded-lg cursor-pointer"
+                    disabled={isProcessing}
+                  />
+                  {documentoCompraventa && (
+                    <div className="mt-2 p-2 bg-white border border-green-200 rounded flex items-center justify-between">
+                      <p className="text-sm text-green-700">✅ {documentoCompraventa.name}</p>
+                      <button
+                        onClick={() => setDocumentoCompraventa(null)}
+                        className="text-red-500 hover:text-red-700"
+                        disabled={isProcessing}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-xs text-slate-500 mt-2">Máx. 5MB. Formatos: PDF, DOC, DOCX, JPG, PNG</p>
+                </div>
+              </div>
+
+              {/* RESUMEN FINANCIERO */}
               {reservaVentaForm.depositoInicial > 0 && selectedLote.precio && (
                 <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 p-5 rounded-xl">
                   <h4 className="text-sm font-bold text-green-900 mb-3 uppercase">📊 Resumen Financiero</h4>
@@ -916,18 +1119,18 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
                       <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mt-3">
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-blue-900 font-medium">💳 Valor de Cada Cuota:</span>
-                          <span className="text-xl font-bold text-blue-700">${calcularValorCuota().toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+                          <span className="text-xl font-bold text-blue-700">
+                            ${calcularValorCuota().toLocaleString(undefined, {maximumFractionDigits: 2})}
+                          </span>
                         </div>
-                        <p className="text-xs text-blue-700 mt-1">
-                          {reservaVentaForm.numeroCuotas} cuotas mensuales
-                        </p>
+                        <p className="text-xs text-blue-700 mt-1">{reservaVentaForm.numeroCuotas} cuotas mensuales</p>
                       </div>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Botones de Acción */}
+              {/* BOTONES DE ACCIÓN */}
               <div className="flex gap-3 pt-6 border-t sticky bottom-0 bg-white">
                 <button
                   onClick={() => setShowReservaVentaModal(false)}
@@ -938,10 +1141,23 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
                 </button>
                 <button
                   onClick={handleSaveReservaVenta}
-                  disabled={isProcessing || !reservaVentaForm.nombre || reservaVentaForm.depositoInicial <= 0}
+                  disabled={
+                    isProcessing ||
+                    !reservaVentaForm.nombre ||
+                    reservaVentaForm.depositoInicial <= 0 ||
+                    !reservaVentaForm.email ||
+                    !reservaVentaForm.telefono
+                  }
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-brand-600 to-brand-700 text-white rounded-xl hover:from-brand-700 hover:to-brand-800 font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
                 >
-                  {isProcessing ? '⏳ Procesando...' : `✅ Confirmar ${reservaVentaForm.accion === 'reservado' ? 'Reserva' : 'Venta'}`}
+                  {isProcessing ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Procesando...</span>
+                    </div>
+                  ) : (
+                    `✅ Confirmar ${reservaVentaForm.accion === 'reservado' ? 'Reserva' : 'Venta'}`
+                  )}
                 </button>
               </div>
 

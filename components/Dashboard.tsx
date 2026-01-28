@@ -46,12 +46,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
   
   // Calcular saldo pendiente correctamente: Valor Lote - Depósito Inicial - Total Pagado
   const totalSaldoPendiente = clientesActuales.reduce((sum, c) => {
-    const totalPagadoCliente = pagosClientes
-      .filter(p => p.clienteId === c.id)
-      .reduce((acc, p) => acc + (p.monto || 0), 0);
-    const saldoCliente = (c.valorLote || 0) - (c.depositoInicial || 0) - totalPagadoCliente;
-    return sum + Math.max(0, saldoCliente); // No mostrar negativos
-  }, 0);
+  // Contar SOLO los abonos posteriores (excluyendo depósito inicial)
+  const abonosPosteriores = pagosClientes
+    .filter(p => p.clienteId === c.id && 
+                 p.tipoPago !== 'Depósito de Reserva' && 
+                 p.tipoPago !== 'Cuota Inicial')
+    .reduce((acc, p) => acc + (p.monto || 0), 0);
+  
+  // Total pagado = Depósito Inicial + Abonos posteriores
+  const totalPagadoCliente = (c.depositoInicial || 0) + abonosPosteriores;
+  
+  // Saldo pendiente = Valor lote - Total pagado
+  const saldoCliente = (c.valorLote || 0) - totalPagadoCliente;
+  return sum + Math.max(0, saldoCliente);
+}, 0);
   
   const porcentajePromedioPago = totalValorLotes > 0 ? Math.round((totalDepositosRecibidos / totalValorLotes) * 100) : 0;
   const clientesPagados = clientesActuales.filter(c => c.estado === 'pagado').length;
@@ -725,68 +733,87 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
             </div>
           </div>
 
-          {/* Tabla de Clientes */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
-              <h4 className="font-semibold text-slate-900">Clientes por Lote (Top 5)</h4>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-600">
-                <thead className="bg-slate-50 text-slate-900 font-semibold uppercase text-xs">
-                  <tr>
-                    <th className="px-6 py-4">Cliente</th>
-                    <th className="px-6 py-4">Lote</th>
-                    <th className="px-6 py-4 text-right">Valor Lote</th>
-                    <th className="px-6 py-4 text-right">Depósito</th>
-                    <th className="px-6 py-4 text-right">Total Pagado</th>
-                    <th className="px-6 py-4 text-right">Saldo Pendiente</th>
-                    <th className="px-6 py-4">Estado</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {clientesActuales.slice(0, 5).map((cliente) => {
-                    // Calcular total pagado para este cliente
-                    const totalPagadoCliente = pagosClientes
-                      .filter(p => p.clienteId === cliente.id)
-                      .reduce((acc, p) => acc + (p.monto || 0), 0);
-                    
-                    // Calcular saldo pendiente: Valor - Depósito - Pagos
-                    const saldoPendiente = (cliente.valorLote || 0) - (cliente.depositoInicial || 0) - totalPagadoCliente;
-                    
-                    return (
-                      <tr key={cliente.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4 font-medium text-slate-900">{cliente.nombre}</td>
-                        <td className="px-6 py-4">#{cliente.numeroLote}</td>
-                        <td className="px-6 py-4 text-right font-semibold">${cliente.valorLote?.toLocaleString() || 0}</td>
-                        <td className="px-6 py-4 text-right font-semibold text-emerald-600">
-                          ${cliente.depositoInicial?.toLocaleString() || 0}
-                        </td>
-                        <td className="px-6 py-4 text-right font-semibold text-blue-600">
-                          ${totalPagadoCliente.toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4 text-right font-semibold text-orange-600">
-                          ${Math.max(0, saldoPendiente).toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              cliente.estado === 'pagado'
-                                ? 'bg-green-100 text-green-800'
-                                : cliente.estado === 'mora'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-blue-100 text-blue-800'
-                            }`}
-                          >
-                            {cliente.estado}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Tabla de Clientes por Lote */}
+<div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+  <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+    <h4 className="font-semibold text-slate-900">Clientes por Lote (Top 5)</h4>
+  </div>
+  <div className="overflow-x-auto">
+    <table className="w-full text-left text-sm text-slate-600">
+      <thead className="bg-slate-50 text-slate-900 font-semibold uppercase text-xs">
+        <tr>
+          <th className="px-6 py-4">Cliente</th>
+          <th className="px-6 py-4">Lote</th>
+          <th className="px-6 py-4 text-right">Valor Lote</th>
+          <th className="px-6 py-4 text-right">Depósito Inicial</th>
+          {/* ✅ NUEVA COLUMNA */}
+          <th className="px-6 py-4 text-right">Abonos Posteriores</th>
+          <th className="px-6 py-4 text-right">Total Pagado</th>
+          <th className="px-6 py-4 text-right">Saldo Pendiente</th>
+          <th className="px-6 py-4">Estado</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {clientesActuales.slice(0, 5).map((cliente) => {
+          // ✅ Cálculo correcto de abonos
+          const abonosPosteriores = pagosClientes
+            .filter(p => p.clienteId === cliente.id && 
+                         p.tipoPago !== 'Depósito de Reserva' && 
+                         p.tipoPago !== 'Cuota Inicial')
+            .reduce((acc, p) => acc + (p.monto || 0), 0);
+          
+          // ✅ Total pagado = Depósito + Abonos
+          const totalPagadoCliente = (cliente.depositoInicial || 0) + abonosPosteriores;
+          
+          // ✅ Saldo pendiente correcto
+          const saldoPendiente = (cliente.valorLote || 0) - totalPagadoCliente;
+          
+          return (
+            <tr key={cliente.id} className="hover:bg-slate-50 transition-colors">
+              <td className="px-6 py-4 font-medium text-slate-900">{cliente.nombre}</td>
+              <td className="px-6 py-4">#{cliente.numeroLote}</td>
+              <td className="px-6 py-4 text-right font-semibold">${cliente.valorLote?.toLocaleString() || 0}</td>
+              
+              {/* Depósito Inicial (verde) */}
+              <td className="px-6 py-4 text-right font-semibold text-emerald-600">
+                ${cliente.depositoInicial?.toLocaleString() || 0}
+              </td>
+              
+              {/* ✅ NUEVA: Abonos Posteriores (azul) */}
+              <td className="px-6 py-4 text-right font-semibold text-blue-600">
+                ${abonosPosteriores.toLocaleString()}
+              </td>
+              
+              {/* Total Pagado (suma de depósito + abonos) */}
+              <td className="px-6 py-4 text-right font-semibold text-blue-600">
+                ${totalPagadoCliente.toLocaleString()}
+              </td>
+              
+              {/* Saldo Pendiente (Valor Lote - Total Pagado) */}
+              <td className="px-6 py-4 text-right font-semibold text-orange-600">
+                ${Math.max(0, saldoPendiente).toLocaleString()}
+              </td>
+              
+              <td className="px-6 py-4">
+                <span
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    cliente.estado === 'pagado'
+                      ? 'bg-green-100 text-green-800'
+                      : cliente.estado === 'mora'
+                      ? 'bg-red-100 text-red-800'
+                      : 'bg-blue-100 text-blue-800'
+                  }`}
+                >
+                  {cliente.estado}
+                </span>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+</div>
         </>
       )}
     </div>

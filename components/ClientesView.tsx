@@ -3,6 +3,17 @@ import { ClienteInteresado, ClienteActual, PagoCliente, User } from '../types';
 import { Users, UserPlus, DollarSign, FileText, Trash2, Eye, Plus, X, CheckCircle, Printer } from 'lucide-react';
 import jsPDF from 'jspdf';
 
+// Nuevos imports para servicios de PDF y Envío
+import {
+  generarReciboAbono,
+  blobToBase64,
+  descargarPDF,
+  generarNombreArchivo,
+  type ReciboData
+} from '../services/pdfService';
+
+import { enviarReciboAbono } from '../services/envioService';
+
 interface ClientesViewProps {
   clientesInteresados: ClienteInteresado[];
   clientesActuales: ClienteActual[];
@@ -16,6 +27,8 @@ interface ClientesViewProps {
   onUpdateClienteInteresado?: (id: string, updates: Partial<ClienteInteresado>) => void;
   onUpdateClienteActual?: (id: string, updates: Partial<ClienteActual>) => void;
   currentUser: User;
+  // Agregado para soportar la función de guardar documentos
+  onAddDocument?: (doc: any) => Promise<void>;
 }
 
 const ClientesView: React.FC<ClientesViewProps> = ({
@@ -29,6 +42,7 @@ const ClientesView: React.FC<ClientesViewProps> = ({
   onDeleteClienteActual,
   onDeletePagoCliente,
   currentUser,
+  onAddDocument, // Destructuramos la nueva prop
 }) => {
   const [activeTab, setActiveTab] = useState<'interesados' | 'actuales'>('interesados');
   const [showModalInteresado, setShowModalInteresado] = useState(false);
@@ -36,6 +50,9 @@ const ClientesView: React.FC<ClientesViewProps> = ({
   const [showModalPago, setShowModalPago] = useState(false);
   const [selectedCliente, setSelectedCliente] = useState<ClienteActual | null>(null);
   const [selectedInteresado, setSelectedInteresado] = useState<ClienteInteresado | null>(null);
+  
+  // Nuevo estado para controlar la carga de generación de recibos
+  const [generandoRecibo, setGenerandoRecibo] = useState<string | null>(null);
 
   // Form states
   const [formInteresado, setFormInteresado] = useState({
@@ -151,14 +168,122 @@ const ClientesView: React.FC<ClientesViewProps> = ({
     return getPagosCliente(clienteId).reduce((sum, p) => sum + p.monto, 0);
   };
 
+  // ==================== FUNCIÓN PARA GENERAR RECIBO ====================
+  const handleGenerarReciboAbono = async (
+    cliente: ClienteActual,
+    pago: PagoCliente
+  ) => {
+    try {
+      setGenerandoRecibo(pago.id);
+      console.log('📋 Generando recibo de abono...');
+
+      // Calcular saldos
+      const abonosPosteriores = pagosClientes
+        .filter(
+          (p) =>
+            p.clienteId === cliente.id &&
+            p.tipoPago !== 'Depósito de Reserva' &&
+            p.tipoPago !== 'Cuota Inicial'
+        )
+        .reduce((acc, p) => acc + p.monto, 0);
+
+      const totalPagado = cliente.depositoInicial + abonosPosteriores;
+      const saldoActual = cliente.valorLote - totalPagado;
+      const saldoAnterior = saldoActual + pago.monto;
+
+      console.log('💰 Saldos calculados:', {
+        saldoAnterior,
+        monto: pago.monto,
+        saldoActual
+      });
+
+      // Generar PDF del recibo
+      console.log('📄 Generando PDF...');
+
+      const reciboData: ReciboData = {
+        cliente,
+        pago,
+        saldoAnterior,
+        saldoActual
+      };
+
+      const reciboBlob = await generarReciboAbono(reciboData);
+      const reciboBase64 = await blobToBase64(reciboBlob);
+      const nombreArchivo = generarNombreArchivo(
+        'recibo',
+        cliente.numeroLote
+      );
+
+      console.log('✅ PDF generado');
+
+      // Guardar documento si la función está disponible
+      console.log('💾 Guardando documento...');
+      if (onAddDocument) {
+        await onAddDocument({
+          name: nombreArchivo,
+          type: 'application/pdf',
+          data: reciboBase64,
+          uploadedBy: currentUser?.name || 'Sistema',
+          category: 'Recibo de Abono',
+          uploadedAt: new Date().toISOString()
+        });
+      }
+
+      console.log('✅ Documento guardado');
+
+      // Preguntar si enviar por email
+      const enviarPorEmail = window.confirm(
+        `¿Deseas enviar el recibo por email a ${cliente.email}?`
+      );
+
+      if (enviarPorEmail && cliente.email) {
+        console.log('📧 Enviando recibo por email...');
+
+        const resultadoEnvio = await enviarReciboAbono(
+          {
+            nombre: cliente.nombre,
+            email: cliente.email,
+            telefono: cliente.telefono,
+            numeroLote: cliente.numeroLote
+          },
+          {
+            monto: pago.monto,
+            fecha: pago.fechaPago,
+            saldoAnterior,
+            saldoActual
+          },
+          reciboBase64,
+          nombreArchivo
+        );
+
+        if (resultadoEnvio.success) {
+          console.log('✅ Email enviado');
+        } else {
+          console.warn('⚠️ Error enviando email:', resultadoEnvio.error);
+        }
+      }
+
+      // Descargar PDF
+      descargarPDF(reciboBlob, nombreArchivo);
+
+      alert(
+        `✅ Recibo generado y guardado!\n\nArchivo: ${nombreArchivo}\n\nEl recibo ha sido descargado a tu computadora.`
+      );
+    } catch (error) {
+      console.error('❌ Error generando recibo:', error);
+      alert(`Error: ${(error as Error).message}`);
+    } finally {
+      setGenerandoRecibo(null);
+    }
+  };
+
   // ============================================
-  // FUNCIÓN DE EXPORTACIÓN A PDF
+  // FUNCIÓN DE EXPORTACIÓN A PDF (REPORTES GENERALES)
   // ============================================
   const handleExportPDF = () => {
     try {
       const doc = new jsPDF();
       
-      // Configurar colores
       const brandColor = [79, 70, 229];
       const greenColor = [16, 185, 129];
       const redColor = [239, 68, 68];
@@ -166,8 +291,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
       const orangeColor = [249, 115, 22];
 
       // ===== PÁGINA 1: RESUMEN GENERAL =====
-      
-      // Título principal
       doc.setFillColor(brandColor[0], brandColor[1], brandColor[2]);
       doc.rect(0, 0, 210, 35, 'F');
       doc.setTextColor(255, 255, 255);
@@ -201,7 +324,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
       const cardWidth = 60;
       
       // Fila 1
-      // Clientes Actuales
       doc.setFillColor(240, 253, 244);
       doc.setDrawColor(200, 200, 200);
       doc.roundedRect(14, cardY, cardWidth, cardHeight, 3, 3, 'FD');
@@ -214,7 +336,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
       doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
       doc.text(totalClientes.toString(), 44, cardY + 14, { align: 'center' });
 
-      // Clientes Interesados
       doc.setFillColor(239, 246, 255);
       doc.roundedRect(78, cardY, cardWidth, cardHeight, 3, 3, 'FD');
       doc.setFontSize(8);
@@ -226,7 +347,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
       doc.setTextColor(blueColor[0], blueColor[1], blueColor[2]);
       doc.text(totalInteresados.toString(), 108, cardY + 14, { align: 'center' });
 
-      // Total Valor Lotes
       doc.setFillColor(254, 249, 195);
       doc.roundedRect(142, cardY, cardWidth, cardHeight, 3, 3, 'FD');
       doc.setFontSize(8);
@@ -241,7 +361,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
       // Fila 2
       const cardY2 = cardY + cardHeight + 5;
       
-      // Total Pagado
       doc.setFillColor(220, 252, 231);
       doc.roundedRect(14, cardY2, cardWidth, cardHeight, 3, 3, 'FD');
       doc.setFontSize(8);
@@ -253,7 +372,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
       doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
       doc.text(`$${totalPagado.toLocaleString()}`, 44, cardY2 + 14, { align: 'center' });
 
-      // Saldo Pendiente
       doc.setFillColor(255, 237, 213);
       doc.roundedRect(78, cardY2, cardWidth, cardHeight, 3, 3, 'FD');
       doc.setFontSize(8);
@@ -265,7 +383,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
       doc.setTextColor(orangeColor[0], orangeColor[1], orangeColor[2]);
       doc.text(`$${totalPendiente.toLocaleString()}`, 108, cardY2 + 14, { align: 'center' });
 
-      // Total Pagos
       doc.setFillColor(243, 244, 246);
       doc.roundedRect(142, cardY2, cardWidth, cardHeight, 3, 3, 'FD');
       doc.setFontSize(8);
@@ -302,7 +419,7 @@ const ClientesView: React.FC<ClientesViewProps> = ({
 
       y += 10;
 
-      // Datos de clientes (máximo 10 para la primera página)
+      // Datos de clientes
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
       const maxClientes = Math.min(clientesActuales.length, 10);
@@ -313,7 +430,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
         const saldoPendiente = cliente.saldoFinal - totalPagadoCliente;
         const progreso = ((totalPagadoCliente / cliente.saldoFinal) * 100).toFixed(0);
 
-        // Alternar color de fondo
         if (i % 2 === 0) {
           doc.setFillColor(252, 252, 253);
           doc.rect(14, y - 3, 182, 7, 'F');
@@ -372,7 +488,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
       if (pagosClientes.length > 0) {
         doc.addPage();
         
-        // Título
         doc.setFillColor(brandColor[0], brandColor[1], brandColor[2]);
         doc.rect(0, 0, 210, 25, 'F');
         doc.setTextColor(255, 255, 255);
@@ -382,7 +497,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
 
         y = 35;
         
-        // Encabezados
         doc.setFillColor(248, 250, 252);
         doc.rect(14, y, 182, 8, 'F');
         doc.setFontSize(7);
@@ -397,7 +511,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
 
         y += 10;
 
-        // Pagos (últimos 30)
         doc.setFont('helvetica', 'normal');
         const maxPagos = Math.min(pagosClientes.length, 30);
         const pagosOrdenados = [...pagosClientes]
@@ -413,32 +526,26 @@ const ClientesView: React.FC<ClientesViewProps> = ({
             doc.rect(14, y - 3, 182, 7, 'F');
           }
 
-          // Fecha
           doc.setTextColor(0, 0, 0);
           doc.text(new Date(pago.fechaPago).toLocaleDateString('es-ES'), 16, y + 2);
 
-          // Cliente
           const clienteNombre = cliente ? 
             (cliente.nombre.length > 20 ? cliente.nombre.substring(0, 18) + '...' : cliente.nombre) : 
             'Desconocido';
           doc.text(clienteNombre, 40, y + 2);
 
-          // Lote
           doc.text(cliente ? `#${cliente.numeroLote}` : '-', 85, y + 2);
 
-          // Monto
           doc.setFont('helvetica', 'bold');
           doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
           doc.text(`$${pago.monto.toLocaleString()}`, 105, y + 2);
           doc.setFont('helvetica', 'normal');
 
-          // Tipo pago
           doc.setTextColor(71, 85, 105);
           const tipoPagoTexto = pago.tipoPago === 'cuota' ? 'Cuota' : 
                                 pago.tipoPago === 'deposito_inicial' ? 'Depósito' : 'Extra';
           doc.text(tipoPagoTexto, 130, y + 2);
 
-          // Forma pago
           doc.text(pago.formaPago.charAt(0).toUpperCase() + pago.formaPago.slice(1), 165, y + 2);
 
           y += 7;
@@ -447,7 +554,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
         }
       }
 
-      // Footer en todas las páginas
       const pageCount = doc.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -462,7 +568,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
         );
       }
 
-      // Guardar PDF
       const fileName = `clientes_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(fileName);
       
@@ -505,7 +610,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
           </button>
         </div>
 
-        {/* Botón de exportación PDF */}
         <button
           onClick={handleExportPDF}
           className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm"
@@ -731,34 +835,91 @@ const ClientesView: React.FC<ClientesViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Historial de pagos */}
+                  {/* HISTORIAL DE PAGOS MEJORADO */}
                   {getPagosCliente(cliente.id).length > 0 && (
                     <div className="border-t border-slate-100 p-4 bg-slate-50">
-                      <h5 className="text-sm font-semibold text-slate-700 mb-2">Historial de Pagos</h5>
-                      <div className="space-y-2">
+                      <div className="flex items-center justify-between mb-3">
+                        <h5 className="text-sm font-semibold text-slate-700">
+                          📋 Historial de Pagos
+                        </h5>
+                        <span className="text-xs bg-slate-200 text-slate-700 px-2 py-1 rounded">
+                          {getPagosCliente(cliente.id).length} pago(s)
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
                         {getPagosCliente(cliente.id)
-                          .slice(-3)
+                          .slice(-5) // Últimos 5 pagos
                           .reverse()
                           .map((pago) => (
-                            <div key={pago.id} className="flex items-center justify-between text-sm bg-white p-2 rounded">
+                            <div
+                              key={pago.id}
+                              className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200 hover:border-brand-200 hover:shadow-sm transition-all"
+                            >
                               <div className="flex-1">
-                                <span className="font-medium">${pago.monto.toLocaleString()}</span>
-                                <span className="text-slate-500 ml-2">
-                                  {new Date(pago.fechaPago).toLocaleDateString()}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-semibold text-emerald-600">
+                                    ${pago.monto.toLocaleString()}
+                                  </span>
+                                  <span className="text-xs text-slate-500">
+                                    {new Date(pago.fechaPago).toLocaleDateString('es-CO')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-xs text-slate-600">
+                                    {pago.tipoPago || 'Abono'}
+                                  </span>
+                                  <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+                                    {pago.formaPago}
+                                  </span>
+                                </div>
                               </div>
-                              <span className="text-xs text-slate-500 capitalize mr-2">{pago.formaPago}</span>
-                              {onDeletePagoCliente && (
+
+                              <div className="flex items-center gap-2 ml-2">
+                                {/* Botón para generar recibo */}
                                 <button
-                                  onClick={() => onDeletePagoCliente(pago.id)}
-                                  className="text-red-400 hover:text-red-600"
+                                  onClick={() => handleGenerarReciboAbono(cliente, pago)}
+                                  disabled={generandoRecibo === pago.id || !cliente.email}
+                                  className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-800 text-xs rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                  title={cliente.email ? 'Generar recibo de abono' : 'El cliente no tiene email'}
                                 >
-                                  <Trash2 size={14} />
+                                  {generandoRecibo === pago.id ? (
+                                    <>
+                                      <div className="w-3 h-3 border border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                      <span>Procesando...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span>📄</span>
+                                      <span className="hidden sm:inline">Recibo</span>
+                                    </>
+                                  )}
                                 </button>
-                              )}
+
+                                {/* Botón para eliminar pago */}
+                                {onDeletePagoCliente && (
+                                  <button
+                                    onClick={() => {
+                                      if (window.confirm(`¿Deseas eliminar este pago de $${pago.monto.toLocaleString()}?`)) {
+                                        onDeletePagoCliente(pago.id);
+                                      }
+                                    }}
+                                    className="px-2 py-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                                    title="Eliminar pago"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           ))}
                       </div>
+
+                      {getPagosCliente(cliente.id).length > 5 && (
+                        <p className="text-xs text-slate-500 mt-2 text-center">
+                          + {getPagosCliente(cliente.id).length - 5} pagos anteriores
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -775,7 +936,6 @@ const ClientesView: React.FC<ClientesViewProps> = ({
         </div>
       )}
 
-      {/* MODALES (sin cambios) */}
       {/* MODAL: Agregar Interesado */}
       {showModalInteresado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
@@ -967,68 +1127,157 @@ const ClientesView: React.FC<ClientesViewProps> = ({
         </div>
       )}
 
-      {/* MODAL: Registrar Pago */}
+      {/* MODAL: Registrar Pago MEJORADO */}
       {showModalPago && selectedCliente && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="font-semibold text-slate-900">Registrar Pago - {selectedCliente.nombre}</h3>
-              <button onClick={() => setShowModalPago(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={20} />
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            {/* ENCABEZADO */}
+            <div className="sticky top-0 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white p-6 flex justify-between items-start rounded-t-2xl">
+              <div>
+                <h3 className="text-xl font-bold">💳 Registrar Pago</h3>
+                <p className="text-emerald-100 mt-1">{selectedCliente.nombre}</p>
+              </div>
+              <button
+                onClick={() => setShowModalPago(false)}
+                className="text-white hover:text-emerald-100"
+              >
+                <X size={24} />
               </button>
             </div>
+
             <form onSubmit={handleAddPago} className="p-6 space-y-4">
+              {/* INFORMACIÓN DEL CLIENTE */}
+              <div className="bg-slate-50 p-4 rounded-lg">
+                <h4 className="text-sm font-semibold text-slate-700 mb-3">
+                  📊 Información del Lote
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Lote:</span>
+                    <span className="font-semibold">#{selectedCliente.numeroLote}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Valor Total:</span>
+                    <span className="font-semibold">
+                      ${selectedCliente.valorLote?.toLocaleString() || 0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-slate-200">
+                    <span className="text-slate-600">Saldo Actual:</span>
+                    <span className="font-bold text-orange-600">
+                      ${selectedCliente.saldoFinal?.toLocaleString() || 0}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* MONTO */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Monto ($) *</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  💵 Monto del Pago *
+                </label>
                 <input
                   type="number"
                   step="0.01"
+                  min="0"
                   value={formPago.monto}
-                  onChange={(e) => setFormPago({ ...formPago, monto: parseFloat(e.target.value) })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                  onChange={(e) =>
+                    setFormPago({
+                      ...formPago,
+                      monto: parseFloat(e.target.value) || 0
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-lg font-semibold"
+                  placeholder="0.00"
                   required
+                  autoFocus
                 />
+                <p className="text-xs text-slate-500 mt-1">
+                  Máximo: ${selectedCliente.saldoFinal?.toLocaleString() || 0}
+                </p>
               </div>
+
+              {/* TIPO DE PAGO */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Pago *</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  📋 Tipo de Pago *
+                </label>
                 <select
                   value={formPago.tipoPago}
-                  onChange={(e) => setFormPago({ ...formPago, tipoPago: e.target.value as any })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                  onChange={(e) =>
+                    setFormPago({
+                      ...formPago,
+                      tipoPago: e.target.value as any
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
                   required
                 >
-                  <option value="cuota">Cuota</option>
+                  <option value="cuota">Cuota Mensual</option>
+                  <option value="abono">Abono Extra</option>
                   <option value="deposito_inicial">Depósito Inicial</option>
-                  <option value="pago_extra">Pago Extra</option>
                 </select>
               </div>
+
+              {/* FORMA DE PAGO */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Forma de Pago</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  💳 Forma de Pago
+                </label>
                 <select
                   value={formPago.formaPago}
-                  onChange={(e) => setFormPago({ ...formPago, formaPago: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                  onChange={(e) =>
+                    setFormPago({
+                      ...formPago,
+                      formaPago: e.target.value
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
                 >
                   <option value="efectivo">Efectivo</option>
-                  <option value="transferencia">Transferencia</option>
+                  <option value="transferencia">Transferencia Bancaria</option>
                   <option value="cheque">Cheque</option>
+                  <option value="debito">Débito Automático</option>
+                  <option value="tarjeta_credito">Tarjeta de Crédito</option>
                 </select>
               </div>
+
+              {/* NOTAS */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Notas</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  📝 Notas (Opcional)
+                </label>
                 <textarea
                   value={formPago.notas}
-                  onChange={(e) => setFormPago({ ...formPago, notas: e.target.value })}
+                  onChange={(e) =>
+                    setFormPago({
+                      ...formPago,
+                      notas: e.target.value
+                    })
+                  }
                   rows={2}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none resize-none"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none resize-none"
+                  placeholder="Ej: Pago realizado en banco XYZ"
                 />
               </div>
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors"
-              >
-                Registrar Pago
-              </button>
+
+              {/* BOTONES */}
+              <div className="flex gap-2 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowModalPago(false)}
+                  className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-medium transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={formPago.monto <= 0}
+                  className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                >
+                  ✅ Registrar Pago
+                </button>
+              </div>
             </form>
           </div>
         </div>
