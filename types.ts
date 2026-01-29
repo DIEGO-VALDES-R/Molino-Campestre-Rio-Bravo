@@ -75,23 +75,24 @@ export interface Obra {
   id: string;
   nombre: string;
   descripcion?: string;
-  etapaActual: EtapaObra;
+  etapaActual: string;
   progreso: number; // 0-100
   presupuesto: number;
   gastado: number;
   fechaInicio: string;
   fechaEstimadaFin?: string;
-  fechaRealFin?: string;
-  responsable?: string;
+  fotos: any[];
+  hitos: any[];
+  gastos: any[];
   ubicacion?: string;
-  fotos: FotoObra[];
-  hitos: Hito[];
-  gastos: GastoObra[];
-  estado: 'activa' | 'pausada' | 'terminada' | 'cancelada';
-  lotesAsociados?: string[]; // IDs de lotes relacionados
-  documentos?: string[]; // IDs de documentos
+  responsable?: string;
+  estado: 'activa' | 'pausada' | 'completada' | 'cancelada';
+  compartidoConClientes?: boolean;
+  lotesAsociados?: string[];
+  clientesAsociados?: string[];
   createdAt: string;
   updatedAt: string;
+  createdBy?: string;
 }
 
 /**

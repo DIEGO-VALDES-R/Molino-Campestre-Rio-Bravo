@@ -897,3 +897,126 @@ export const exportToCSV = (transactions: Transaction[]) => {
   link.click();
   document.body.removeChild(link);
 };
+
+// ==================== OBRAS ====================
+
+/**
+ * Obtener todas las obras
+ */
+export const getAllObras = async (): Promise<Obra[] | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('obras')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error obteniendo obras:', error);
+      return null;
+    }
+    return data || [];
+  } catch (e) {
+    console.error('Error:', e);
+    return null;
+  }
+};
+
+/**
+ * Crear una nueva obra
+ */
+export const createObra = async (obra: Omit<Obra, 'id' | 'createdAt' | 'updatedAt'>): Promise<Obra | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('obras')
+      .insert([{
+        nombre: obra.nombre,
+        descripcion: obra.descripcion,
+        etapa: obra.etapaActual,
+        progreso: obra.progreso,
+        presupuesto: obra.presupuesto,
+        gastado: obra.gastado,
+        fecha_inicio: obra.fechaInicio,
+        fecha_fin_estimada: obra.fechaEstimadaFin,
+        fotos: obra.fotos,
+        hitos: obra.hitos,
+        gastos: obra.gastos,
+        ubicacion: obra.ubicacion,
+        responsable: obra.responsable,
+        estado: obra.estado
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creando obra:', error);
+      return null;
+    }
+    return data;
+  } catch (e) {
+    console.error('Error:', e);
+    return null;
+  }
+};
+
+/**
+ * Actualizar una obra
+ */
+export const updateObra = async (id: string, updates: Partial<Obra>): Promise<Obra | null> => {
+  try {
+    const updateData: any = {};
+
+    if (updates.nombre) updateData.nombre = updates.nombre;
+    if (updates.descripcion) updateData.descripcion = updates.descripcion;
+    if (updates.etapaActual) updateData.etapa = updates.etapaActual;
+    if (updates.progreso !== undefined) updateData.progreso = updates.progreso;
+    if (updates.presupuesto !== undefined) updateData.presupuesto = updates.presupuesto;
+    if (updates.gastado !== undefined) updateData.gastado = updates.gastado;
+    if (updates.fechaInicio) updateData.fecha_inicio = updates.fechaInicio;
+    if (updates.fechaEstimadaFin) updateData.fecha_fin_estimada = updates.fechaEstimadaFin;
+    if (updates.fotos) updateData.fotos = updates.fotos;
+    if (updates.hitos) updateData.hitos = updates.hitos;
+    if (updates.gastos) updateData.gastos = updates.gastos;
+    if (updates.ubicacion) updateData.ubicacion = updates.ubicacion;
+    if (updates.responsable) updateData.responsable = updates.responsable;
+    if (updates.estado) updateData.estado = updates.estado;
+
+    updateData.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('obras')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error actualizando obra:', error);
+      return null;
+    }
+    return data;
+  } catch (e) {
+    console.error('Error:', e);
+    return null;
+  }
+};
+
+/**
+ * Eliminar una obra
+ */
+export const deleteObra = async (id: string): Promise<boolean> => {
+  try {
+    const { error } = await supabase
+      .from('obras')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error eliminando obra:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error:', e);
+    return false;
+  }
+};

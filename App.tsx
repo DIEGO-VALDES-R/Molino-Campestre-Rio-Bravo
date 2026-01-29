@@ -56,10 +56,14 @@ import {
   createEgresoFuturo,
   updateEgresoFuturo,
   deleteEgresoFuturo,
-  getAllLotes,
+  getAllLotes,        // ← SOLO UNA VEZ
   createLote,
   updateLote,
-  deleteLote
+  deleteLote,
+  getAllObras,        // ← NUEVOS
+  createObra,
+  updateObra,
+  deleteObra
 } from './services/dataService';
 import { getFinancialAdvice } from './services/geminiService';
 import { 
@@ -117,46 +121,50 @@ const App = () => {
 
   // --- Initial Load ---
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        console.log('Iniciando carga de datos...');
-        
-        const [basedData, clientesInt, clientesAct, pagos, egresos, lotes] = await Promise.all([
-          fetchAllData(),
-          getAllClientesInteresados(),
-          getAllClientesActuales(),
-          getAllPagosClientes(),
-          getAllEgresosFuturos(),
-          getAllLotes()
-        ]);
+  const load = async () => {
+    setLoading(true);
+    try {
+      console.log('Iniciando carga de datos...');
+      
+      // Agregar esta línea con los demás await Promise.all
+      const [basedData, clientesInt, clientesAct, pagos, egresos, lotes, obrasData] = await Promise.all([
+        fetchAllData(),
+        getAllClientesInteresados(),
+        getAllClientesActuales(),
+        getAllPagosClientes(),
+        getAllEgresosFuturos(),
+        getAllLotes(),
+        getAllObras()  // ← AGREGAR ESTO
+      ]);
 
-        const nuevoData = {
-          ...basedData,
-          clientesInteresados: clientesInt || [],
-          clientesActuales: clientesAct || [],
-          pagosClientes: pagos || [],
-          egresosFuturos: egresos || [],
-          lotes: lotes || []
-        };
+      const nuevoData = {
+        ...basedData,
+        clientesInteresados: clientesInt || [],
+        clientesActuales: clientesAct || [],
+        pagosClientes: pagos || [],
+        egresosFuturos: egresos || [],
+        lotes: lotes || []
+      };
 
-        setData(nuevoData);
-      } catch (error) {
-        console.error('Error loading data:', error);
-        setData(prev => ({
-          ...prev,
-          clientesInteresados: [],
-          clientesActuales: [],
-          pagosClientes: [],
-          egresosFuturos: [],
-          lotes: []
-        }));
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
+      setData(nuevoData);
+      setObras(obrasData || []);  // ← AGREGAR ESTO
+      
+    } catch (error) {
+      console.error('Error loading data:', error);
+      setData(prev => ({
+        ...prev,
+        clientesInteresados: [],
+        clientesActuales: [],
+        pagosClientes: [],
+        egresosFuturos: [],
+        lotes: []
+      }));
+    } finally {
+      setLoading(false);
+    }
+  };
+  load();
+}, []);
 
   // --- Computed ---
   const summary: FinancialSummary = useMemo(() => {
@@ -653,30 +661,48 @@ const App = () => {
     }
   };
 
-  // --- Handlers para Obras ---
-  const handleAddObra = async (obra: Omit<Obra, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const nuevaObra: Obra = {
-      ...obra,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    setObras([...obras, nuevaObra]);
-    await logAction('Crear Obra', `Obra: ${obra.nombre} - Etapa: ${obra.etapaActual}`);
-  };
-
-  const handleUpdateObra = async (id: string, updates: Partial<Obra>) => {
-    setObras(obras.map(o => o.id === id ? { ...o, ...updates, updatedAt: new Date().toISOString() } : o));
-    await logAction('Actualizar Obra', `Obra ID: ${id}`);
-  };
-
-  const handleDeleteObra = async (id: string) => {
-    if (window.confirm('¿Está seguro de que desea eliminar esta obra?')) {
-      const obra = obras.find(o => o.id === id);
-      setObras(obras.filter(o => o.id !== id));
-      await logAction('Eliminar Obra', `Obra: ${obra?.nombre}`);
+  // --- HANDLERS PARA OBRAS ---
+const handleAddObra = async (obra: Omit<Obra, 'id' | 'createdAt' | 'updatedAt'>) => {
+  try {
+    const nuevaObra = await createObra(obra);
+    if (nuevaObra) {
+      setObras([...obras, nuevaObra]);
+      await logAction('Crear Obra', `Obra: ${obra.nombre}`);
     }
-  };
+  } catch (e) {
+    console.error(e);
+    alert('Error creando obra');
+  }
+};
+
+const handleUpdateObra = async (id: string, updates: Partial<Obra>) => {
+  try {
+    const obraActualizada = await updateObra(id, updates);
+    if (obraActualizada) {
+      setObras(obras.map(o => o.id === id ? obraActualizada : o));
+      await logAction('Actualizar Obra', `Obra ID: ${id}`);
+    }
+  } catch (e) {
+    console.error(e);
+    alert('Error actualizando obra');
+  }
+};
+
+const handleDeleteObra = async (id: string) => {
+  if (window.confirm('¿Está seguro de que desea eliminar esta obra?')) {
+    try {
+      const deleted = await deleteObra(id);
+      if (deleted) {
+        const obra = obras.find(o => o.id === id);
+        setObras(obras.filter(o => o.id !== id));
+        await logAction('Eliminar Obra', `Obra: ${obra?.nombre}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error eliminando obra');
+    }
+  }
+};
 
   // --- Render ---
 
