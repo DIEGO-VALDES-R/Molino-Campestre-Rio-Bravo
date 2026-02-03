@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Transaction, TransactionType, User, Attachment } from '../types';
-import { Plus, Trash2, Search, FileDown, Printer, Paperclip, FileText, Image as ImageIcon, X } from 'lucide-react';
+import { Plus, Trash2, Search, FileDown, Printer, Paperclip, FileText, Image as ImageIcon, X, Edit2 } from 'lucide-react';
 import { exportToCSV, fileToBase64 } from '../services/dataService';
 import jsPDF from 'jspdf';
 
@@ -8,12 +8,21 @@ interface TransactionListProps {
   transactions: Transaction[];
   onAdd: (t: Omit<Transaction, 'id'>) => void;
   onDelete: (id: string) => void;
+  onUpdate?: (id: string, updates: Partial<Transaction>) => void;
   users: User[];
   currentUser: User;
 }
 
-export const TransactionList: React.FC<TransactionListProps> = ({ transactions, onAdd, onDelete, users, currentUser }) => {
+export const TransactionList: React.FC<TransactionListProps> = ({ 
+  transactions, 
+  onAdd, 
+  onDelete, 
+  onUpdate,
+  users, 
+  currentUser 
+}) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [filter, setFilter] = useState('');
   
   // Form State
@@ -33,7 +42,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      // Limit size to ~1MB for demo purposes
       if (file.size > 1024 * 1024) {
         alert("El archivo es demasiado grande. Máximo 1MB.");
         return;
@@ -58,30 +66,61 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
     setAttachments(attachments.filter(a => a.id !== id));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onAdd({
-      date,
-      type,
-      amount: parseFloat(amount),
-      category,
-      description,
-      user: currentUser.name, // Logged in user
-      attachments: attachments.length > 0 ? attachments : undefined
-    });
-    setIsModalOpen(false);
-    // Reset form
+  const openEditModal = (transaction: Transaction) => {
+    setEditingTransaction(transaction);
+    setType(transaction.type);
+    setAmount(transaction.amount.toString());
+    setCategory(transaction.category);
+    setDescription(transaction.description);
+    setDate(transaction.date);
+    setAttachments(transaction.attachments || []);
+    setIsModalOpen(true);
+  };
+
+  const resetForm = () => {
+    setEditingTransaction(null);
+    setType('ingreso');
     setAmount('');
     setDescription('');
     setCategory('');
+    setDate(new Date().toISOString().split('T')[0]);
     setAttachments([]);
+    setIsModalOpen(false);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (editingTransaction && onUpdate) {
+      // Editar transacción existente
+      onUpdate(editingTransaction.id, {
+        date,
+        type,
+        amount: parseFloat(amount),
+        category,
+        description,
+        attachments: attachments.length > 0 ? attachments : undefined
+      });
+    } else {
+      // Crear nueva transacción
+      onAdd({
+        date,
+        type,
+        amount: parseFloat(amount),
+        category,
+        description,
+        user: currentUser.name,
+        attachments: attachments.length > 0 ? attachments : undefined
+      });
+    }
+    
+    resetForm();
   };
 
   const handlePrint = () => {
     try {
       const doc = new jsPDF();
       
-      // Calcular totales
       const totalIngresos = filteredTransactions
         .filter(t => t.type === 'ingreso')
         .reduce((sum, t) => sum + t.amount, 0);
@@ -92,12 +131,10 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
       
       const balance = totalIngresos - totalEgresos;
 
-      // Configurar colores
-      const brandColor = [79, 70, 229]; // #4F46E5
+      const brandColor = [79, 70, 229];
       const greenColor = [16, 185, 129];
       const redColor = [239, 68, 68];
 
-      // Título
       doc.setFillColor(brandColor[0], brandColor[1], brandColor[2]);
       doc.rect(0, 0, 210, 35, 'F');
       doc.setTextColor(255, 255, 255);
@@ -108,17 +145,14 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
       doc.setFont('helvetica', 'normal');
       doc.text(`Generado: ${new Date().toLocaleDateString('es-ES')}`, 105, 25, { align: 'center' });
 
-      // Resumen
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.text('Resumen Financiero', 14, 45);
 
-      // Cuadros de resumen
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
       
-      // Ingresos
       doc.setDrawColor(200, 200, 200);
       doc.setFillColor(240, 253, 244);
       doc.roundedRect(14, 50, 58, 20, 3, 3, 'FD');
@@ -129,7 +163,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
       doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
       doc.text(`$${totalIngresos.toLocaleString()}`, 43, 66, { align: 'center' });
 
-      // Egresos
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
       doc.setFillColor(254, 242, 242);
@@ -141,7 +174,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
       doc.setTextColor(redColor[0], redColor[1], redColor[2]);
       doc.text(`$${totalEgresos.toLocaleString()}`, 105, 66, { align: 'center' });
 
-      // Balance
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
       doc.setFillColor(238, 242, 255);
@@ -153,7 +185,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
       doc.setTextColor(brandColor[0], brandColor[1], brandColor[2]);
       doc.text(`$${balance.toLocaleString()}`, 167, 66, { align: 'center' });
 
-      // Tabla de transacciones
       let y = 80;
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
@@ -162,7 +193,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
       
       y += 8;
       
-      // Encabezados
       doc.setFillColor(248, 250, 252);
       doc.rect(14, y, 182, 8, 'F');
       doc.setFontSize(8);
@@ -176,24 +206,20 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
 
       y += 10;
 
-      // Transacciones (máximo 20 para que quepa en una página)
       doc.setFont('helvetica', 'normal');
       const maxTransactions = Math.min(filteredTransactions.length, 20);
       
       for (let i = 0; i < maxTransactions; i++) {
         const t = filteredTransactions[i];
         
-        // Alternar color de fondo
         if (i % 2 === 0) {
           doc.setFillColor(252, 252, 253);
           doc.rect(14, y - 3, 182, 7, 'F');
         }
 
-        // Fecha
         doc.setTextColor(0, 0, 0);
         doc.text(t.date, 16, y + 2);
 
-        // Tipo (badge)
         if (t.type === 'ingreso') {
           doc.setFillColor(209, 250, 229);
           doc.setTextColor(6, 95, 70);
@@ -206,16 +232,13 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
         doc.text(t.type === 'ingreso' ? 'Ingreso' : 'Egreso', 47, y + 1.5, { align: 'center' });
         doc.setFontSize(8);
 
-        // Categoría
         doc.setTextColor(0, 0, 0);
         doc.text(t.category.substring(0, 20), 65, y + 2);
 
-        // Descripción (truncar si es muy larga)
         const desc = t.description.length > 30 ? t.description.substring(0, 27) + '...' : t.description;
         doc.setTextColor(71, 85, 105);
         doc.text(desc, 100, y + 2);
 
-        // Monto
         doc.setFont('helvetica', 'bold');
         if (t.type === 'ingreso') {
           doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
@@ -228,17 +251,14 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
 
         y += 7;
         
-        // Si se acerca al final de la página, detener
         if (y > 270) break;
       }
 
-      // Footer
       doc.setFontSize(7);
       doc.setTextColor(148, 163, 184);
       doc.text(`Total de transacciones mostradas: ${maxTransactions} de ${filteredTransactions.length}`, 105, 285, { align: 'center' });
       doc.text('Molino Campestre Rio Bravo - Sistema de Gestión Integral', 105, 290, { align: 'center' });
 
-      // Guardar PDF
       const fileName = `transacciones_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(fileName);
       
@@ -279,7 +299,10 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
             <span className="hidden sm:inline">PDF</span>
           </button>
           <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => {
+              resetForm();
+              setIsModalOpen(true);
+            }}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-sm"
           >
             <Plus size={18} />
@@ -343,13 +366,24 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
                       {t.type === 'egreso' ? '-' : '+'}${t.amount.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <button 
-                        onClick={() => onDelete(t.id)}
-                        className="text-slate-400 hover:text-red-500 transition-colors"
-                        title="Eliminar"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      <div className="flex items-center justify-center gap-2">
+                        {onUpdate && (
+                          <button
+                            onClick={() => openEditModal(t)}
+                            className="text-slate-400 hover:text-blue-500 transition-colors"
+                            title="Editar"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => onDelete(t.id)}
+                          className="text-slate-400 hover:text-red-500 transition-colors"
+                          title="Eliminar"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -365,13 +399,17 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
         </div>
       </div>
 
-      {/* Add Modal */}
+      {/* MODAL: Agregar/Editar Transacción */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-semibold text-slate-900">Nueva Transacción</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <h3 className="font-semibold text-slate-900">
+                {editingTransaction ? 'Editar Transacción' : 'Nueva Transacción'}
+              </h3>
+              <button onClick={resetForm} className="text-slate-400 hover:text-slate-600">
+                <X size={20} />
+              </button>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -475,7 +513,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({ transactions, 
                   type="submit" 
                   className="w-full py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 transition-colors shadow-lg shadow-brand-500/30"
                 >
-                  Guardar Transacción
+                  {editingTransaction ? 'Guardar Cambios' : 'Guardar Transacción'}
                 </button>
               </div>
             </form>

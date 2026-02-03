@@ -760,24 +760,69 @@ const ClientesView: React.FC<ClientesViewProps> = ({
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                      <div className="bg-slate-50 p-3 rounded-lg">
-                        <p className="text-xs text-slate-500 mb-1">Valor Lote</p>
-                        <p className="text-lg font-bold text-slate-900">${cliente.valorLote?.toLocaleString() || 0}</p>
-                      </div>
-                      <div className="bg-slate-50 p-3 rounded-lg">
-                        <p className="text-xs text-slate-500 mb-1">Depósito Inicial</p>
-                        <p className="text-lg font-bold text-emerald-600">${cliente.depositoInicial?.toLocaleString() || 0}</p>
-                      </div>
-                      <div className="bg-slate-50 p-3 rounded-lg">
-                        <p className="text-xs text-slate-500 mb-1">Total Pagado</p>
-                        <p className="text-lg font-bold text-blue-600">${totalPagado.toLocaleString()}</p>
-                      </div>
-                      <div className="bg-slate-50 p-3 rounded-lg">
-                        <p className="text-xs text-slate-500 mb-1">Saldo Pendiente</p>
-                        <p className="text-lg font-bold text-orange-600">${saldoPendiente.toLocaleString()}</p>
-                      </div>
-                    </div>
+                    {/* Información del cliente reorganizada */}
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+  {/* Columna Izquierda: Información básica */}
+  <div className="space-y-3">
+    <div className="flex items-center gap-2 text-sm">
+      <span className="text-slate-500 font-medium w-24">Email:</span>
+      <span className="text-slate-900">{cliente.email || 'No registrado'}</span>
+    </div>
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex items-center gap-2 text-sm flex-1">
+        <span className="text-slate-500 font-medium w-24">Teléfono:</span>
+        <span className="text-slate-900">{cliente.telefono || 'No registrado'}</span>
+      </div>
+      
+      {/* ✨ ACCIONES AQUÍ - AL LADO DEL TELÉFONO */}
+      <div className="flex gap-2">
+  <button
+    onClick={() => {
+      setSelectedCliente(cliente);
+      setShowModalPago(true);
+    }}
+    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm"
+  >
+    <DollarSign size={16} /> Registrar Pago
+  </button>
+  <button
+    onClick={() => {
+      if (window.confirm(`¿Está seguro de que desea eliminar a ${cliente.nombre}? Se eliminarán todos sus pagos asociados.`)) {
+        onDeleteClienteActual(cliente.id);
+      }
+    }}
+    className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-sm"
+  >
+    <Trash2 size={16} /> Eliminar
+  </button>
+</div>
+    </div>
+    <div className="flex items-center gap-2 text-sm">
+      <span className="text-slate-500 font-medium w-24">Lote:</span>
+      <span className="text-slate-900 font-bold">#{cliente.numeroLote}</span>
+    </div>
+  </div>
+
+  {/* Columna Derecha: Datos financieros compactos */}
+  <div className="grid grid-cols-2 gap-3">
+    <div className="bg-slate-50 p-3 rounded-lg">
+      <p className="text-xs text-slate-500 mb-1">Valor Lote</p>
+      <p className="text-base font-bold text-slate-900">${(cliente.valorLote || 0) / 1000}k</p>
+    </div>
+    <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+      <p className="text-xs text-emerald-600 mb-1">Depósito</p>
+      <p className="text-base font-bold text-emerald-700">${(cliente.depositoInicial || 0) / 1000}k</p>
+    </div>
+    <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+      <p className="text-xs text-blue-600 mb-1">Total Pagado</p>
+      <p className="text-base font-bold text-blue-700">${(totalPagado / 1000).toFixed(1)}k</p>
+    </div>
+    <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
+      <p className="text-xs text-orange-600 mb-1">Pendiente</p>
+      <p className="text-base font-bold text-orange-700">${(saldoPendiente / 1000).toFixed(1)}k</p>
+    </div>
+  </div>
+</div>
 
                     {/* Barra de progreso */}
                     <div className="mb-4">

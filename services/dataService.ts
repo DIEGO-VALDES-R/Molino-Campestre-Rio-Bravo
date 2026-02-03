@@ -207,6 +207,23 @@ export const apiDeleteUser = async (id: string) => {
   if (error) throw error;
 };
 
+// Agregar esta función en src/services/dataService.ts
+
+export const apiUpdateUser = async (userId: string, updates: Partial<User>) => {
+  const db = await getDB();
+  const tx = db.transaction('users', 'readwrite');
+  const store = tx.objectStore('users');
+  
+  const user = await store.get(userId);
+  if (!user) throw new Error('Usuario no encontrado');
+  
+  const updatedUser = { ...user, ...updates };
+  await store.put(updatedUser);
+  await tx.done;
+  
+  return updatedUser;
+};
+
 // --- Documents ---
 
 export const apiCreateDocument = async (doc: DocumentFile) => {

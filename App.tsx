@@ -15,7 +15,8 @@ import {
   UserCheck,
   Calendar,
   MapPin,
-  Building2
+  Building2,
+  CheckCircle2
 } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { TransactionList } from './components/TransactionList';
@@ -37,6 +38,7 @@ import {
   apiDeleteNote,
   apiCreateUser,
   apiDeleteUser,
+  apiUpdateUser, // ← AGREGADO NECESARIO
   apiCreateDocument,
   apiDeleteDocument,
   apiCreateLog,
@@ -56,11 +58,11 @@ import {
   createEgresoFuturo,
   updateEgresoFuturo,
   deleteEgresoFuturo,
-  getAllLotes,        // ← SOLO UNA VEZ
+  getAllLotes,        
   createLote,
   updateLote,
   deleteLote,
-  getAllObras,        // ← NUEVOS
+  getAllObras,        
   createObra,
   updateObra,
   deleteObra
@@ -86,6 +88,10 @@ const App = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [changingPasswordUser, setChangingPasswordUser] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   // --- App State ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'notes' | 'users' | 'documents' | 'logs' | 'clientes' | 'egresos-futuros' | 'lotes' | 'obras'>('dashboard');
@@ -134,7 +140,7 @@ const App = () => {
         getAllPagosClientes(),
         getAllEgresosFuturos(),
         getAllLotes(),
-        getAllObras()  // ← AGREGAR ESTO
+        getAllObras()
       ]);
 
       const nuevoData = {
@@ -147,7 +153,7 @@ const App = () => {
       };
 
       setData(nuevoData);
-      setObras(obrasData || []);  // ← AGREGAR ESTO
+      setObras(obrasData || []);  
       
     } catch (error) {
       console.error('Error loading data:', error);
@@ -337,7 +343,51 @@ const App = () => {
       } catch (e) {
         console.error(e);
       }
-  }
+  };
+
+  // --- NUEVAS FUNCIONES PARA CONTRASEÑAS ---
+  const updateUserPassword = async (userId: string, newPass: string) => {
+    if (!newPass || newPass.length < 4) {
+      alert('La contraseña debe tener al menos 4 caracteres');
+      return;
+    }
+
+    try {
+      // Actualizar en el estado local
+      setData(prev => ({
+        ...prev,
+        users: prev.users.map(u => u.id === userId ? { ...u, password: newPass } : u)
+      }));
+
+      // Actualizar en la base de datos
+      await apiUpdateUser(userId, { password: newPass });
+      
+      await logAction('Cambio de contraseña', `Admin cambió contraseña de usuario ${changingPasswordUser?.name}`);
+      
+      alert('✅ Contraseña actualizada exitosamente');
+      
+      // Limpiar formulario
+      setChangingPasswordUser(null);
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowPasswordModal(false);
+    } catch (error) {
+      console.error('Error updating password:', error);
+      alert('❌ Error al cambiar contraseña');
+    }
+  };
+
+  const handleChangePassword = () => {
+    if (newPassword !== confirmPassword) {
+      alert('⚠️ Las contraseñas no coinciden');
+      return;
+    }
+    
+    if (!changingPasswordUser) return;
+    
+    updateUserPassword(changingPasswordUser.id, newPassword);
+  };
+  // ----------------------------------------
 
   const addDocument = async (doc: Omit<DocumentFile, 'id' | 'uploadedAt'>) => {
     const newDoc: DocumentFile = {
@@ -916,11 +966,12 @@ const handleDeleteObra = async (id: string) => {
         <div className="animate-fade-in">
           {activeTab === 'dashboard' && (
             <Dashboard 
-              transactions={data.transactions} 
-              summary={summary}
-              clientesActuales={data.clientesActuales}
-              pagosClientes={data.pagosClientes}
-            />
+  transactions={data.transactions} 
+  summary={summary}
+  clientesActuales={data.clientesActuales}
+  pagosClientes={data.pagosClientes}
+  egresosFuturos={data.egresosFuturos}
+/>
           )}
 
           {activeTab === 'transactions' && (
@@ -1007,50 +1058,187 @@ const handleDeleteObra = async (id: string) => {
           )}
 
           {activeTab === 'users' && (
-             <div className="bg-white rounded-xl shadow-sm border border-slate-100 max-w-2xl mx-auto overflow-hidden">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                  <h3 className="font-semibold text-slate-800">Lista de Usuarios</h3>
-                  <button 
-                    onClick={() => {
-                      const name = prompt("Nombre del usuario:");
-                      if(!name) return;
-                      const email = prompt("Email:") || '';
-                      const pass = prompt("Contraseña:");
-                      if(name && pass) addUser(name, pass, email);
-                    }}
-                    className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 flex items-center gap-1"
-                  >
-                    <Plus size={16}/> Agregar
-                  </button>
+  <>
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 max-w-2xl mx-auto overflow-hidden">
+      <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+        <h3 className="font-semibold text-slate-800">Lista de Usuarios</h3>
+        <button 
+          onClick={() => {
+            const name = prompt("Nombre del usuario:");
+            if(!name) return;
+            const email = prompt("Email:") || '';
+            const pass = prompt("Contraseña:");
+            if(name && pass) addUser(name, pass, email);
+          }}
+          className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 flex items-center gap-1"
+        >
+          <Plus size={16}/> Agregar
+        </button>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {data.users.map(u => (
+          <div key={u.id} className="p-4 flex items-center justify-between hover:bg-slate-50">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold">
+                {u.name.charAt(0)}
+              </div>
+              <div>
+                <p className="font-medium text-slate-900">{u.name}</p>
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <span className="capitalize">{u.role}</span>
+                  <span>•</span>
+                  <span>{u.email || 'Sin email'}</span>
+                  <span>•</span>
+                  <span className="flex items-center gap-1">
+                    <Lock size={10}/>
+                    {u.password ? '****' : 'Sin contraseña'}
+                  </span>
                 </div>
-                <div className="divide-y divide-slate-100">
-                  {data.users.map(u => (
-                    <div key={u.id} className="p-4 flex items-center justify-between hover:bg-slate-50">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold">
-                          {u.name.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-900">{u.name}</p>
-                          <div className="flex items-center gap-2 text-xs text-slate-500">
-                             <span className="capitalize">{u.role}</span>
-                             <span>•</span>
-                             <span className="flex items-center gap-1"><Lock size={10}/> *****</span>
-                          </div>
-                        </div>
-                      </div>
-                      <button 
-                         onClick={() => deleteUser(u.id)} 
-                         className="text-slate-400 hover:text-red-500"
-                         disabled={u.role === 'admin'}
-                         title={u.role === 'admin' ? "No se puede eliminar al admin principal" : "Eliminar"}
-                      >
-                         <X size={18} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-             </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* BOTÓN DE CAMBIAR CONTRASEÑA */}
+              <button 
+                onClick={() => {
+                  setChangingPasswordUser(u);
+                  setShowPasswordModal(true);
+                }}
+                className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                title="Cambiar contraseña"
+              >
+                <Lock size={14} />
+                <span className="hidden sm:inline">Cambiar Contraseña</span>
+              </button>
+              
+              <button 
+                onClick={() => deleteUser(u.id)} 
+                className="text-slate-400 hover:text-red-500"
+                disabled={u.role === 'admin'}
+                title={u.role === 'admin' ? "No se puede eliminar al admin principal" : "Eliminar"}
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {/* MODAL DE CAMBIO DE CONTRASEÑA */}
+    {showPasswordModal && changingPasswordUser && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+          <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
+            <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+              <Lock size={20} className="text-blue-600" />
+              Cambiar Contraseña
+            </h3>
+            <button 
+              onClick={() => {
+                setShowPasswordModal(false);
+                setChangingPasswordUser(null);
+                setNewPassword('');
+                setConfirmPassword('');
+              }} 
+              className="text-slate-400 hover:text-slate-600"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          
+          <div className="p-6 space-y-4">
+            {/* Información del usuario */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-800 font-medium">
+                Usuario: <span className="font-bold">{changingPasswordUser.name}</span>
+              </p>
+              <p className="text-xs text-blue-600 mt-1">
+                {changingPasswordUser.email || 'Sin email'}
+              </p>
+            </div>
+
+            {/* Nueva contraseña */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Nueva Contraseña *
+              </label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Mínimo 4 caracteres"
+                className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+                autoFocus
+              />
+            </div>
+
+            {/* Confirmar contraseña */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Confirmar Contraseña *
+              </label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repita la contraseña"
+                className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+
+            {/* Indicador de coincidencia */}
+            {newPassword && confirmPassword && (
+              <div className={`text-sm flex items-center gap-2 ${
+                newPassword === confirmPassword ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {newPassword === confirmPassword ? (
+                  <>
+                    <CheckCircle2 size={16} />
+                    Las contraseñas coinciden
+                  </>
+                ) : (
+                  <>
+                    <X size={16} />
+                    Las contraseñas no coinciden
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Advertencia */}
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <p className="text-xs text-yellow-800">
+                ⚠️ <strong>Importante:</strong> Asegúrese de comunicar la nueva contraseña al usuario de forma segura.
+              </p>
+            </div>
+
+            {/* Botones */}
+            <div className="flex gap-3 pt-4 border-t">
+              <button
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setChangingPasswordUser(null);
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
+                className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-medium transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleChangePassword}
+                disabled={!newPassword || !confirmPassword || newPassword !== confirmPassword || newPassword.length < 4}
+                className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <Lock size={18} />
+                Cambiar Contraseña
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
           )}
         </div>
       </main>

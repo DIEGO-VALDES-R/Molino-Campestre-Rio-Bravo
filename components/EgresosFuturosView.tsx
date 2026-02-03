@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { EgresoFuturo, User } from '../types';
-import { Calendar, Plus, Trash2, Search, X, Paperclip, FileText, Image as ImageIcon } from 'lucide-react';
+import { Calendar, Plus, Trash2, Search, X, Paperclip, FileText, Image as ImageIcon, Edit2 } from 'lucide-react';
 import { fileToBase64 } from '../services/dataService';
 
 interface EgresosFuturosViewProps {
@@ -26,6 +26,7 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
   currentUser,
 }) => {
   const [showModal, setShowModal] = useState(false);
+  const [editingEgreso, setEditingEgreso] = useState<EgresoFuturo | null>(null);
   const [filter, setFilter] = useState('');
   const [filterEstado, setFilterEstado] = useState<'todos' | 'pendiente' | 'pagado' | 'cancelado'>('todos');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,14 +67,42 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
     setAdjuntos(adjuntos.filter((a) => a.id !== id));
   };
 
+  const openEditModal = (egreso: EgresoFuturo) => {
+    setEditingEgreso(egreso);
+    setForm({
+      fecha: egreso.fecha,
+      tipo: egreso.tipo,
+      categoria: egreso.categoria,
+      descripcion: egreso.descripcion || '',
+      monto: egreso.monto,
+    });
+    setAdjuntos(egreso.adjuntos || []);
+    setShowModal(true);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onAddEgreso({
-      ...form,
-      usuario: currentUser.name,
-      adjuntos: adjuntos.length > 0 ? adjuntos : undefined,
-      estado: 'pendiente',
-    });
+    
+    if (editingEgreso) {
+      // Editar egreso existente
+      onUpdateEgreso(editingEgreso.id, {
+        ...form,
+        adjuntos: adjuntos.length > 0 ? adjuntos : undefined,
+      });
+    } else {
+      // Crear nuevo egreso
+      onAddEgreso({
+        ...form,
+        usuario: currentUser.name,
+        adjuntos: adjuntos.length > 0 ? adjuntos : undefined,
+        estado: 'pendiente',
+      });
+    }
+    
+    resetForm();
+  };
+
+  const resetForm = () => {
     setForm({
       fecha: new Date().toISOString().split('T')[0],
       tipo: 'planificado',
@@ -82,6 +111,7 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
       monto: 0,
     });
     setAdjuntos([]);
+    setEditingEgreso(null);
     setShowModal(false);
   };
 
@@ -132,7 +162,11 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
           </p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            setEditingEgreso(null);
+            resetForm();
+            setShowModal(true);
+          }}
           className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
         >
           <Plus size={18} /> Nuevo Egreso Futuro
@@ -234,13 +268,22 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
                       </select>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={() => onDeleteEgreso(egreso.id)}
-                        className="text-slate-400 hover:text-red-500 transition-colors"
-                        title="Eliminar"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => openEditModal(egreso)}
+                          className="text-slate-400 hover:text-blue-500 transition-colors"
+                          title="Editar"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => onDeleteEgreso(egreso.id)}
+                          className="text-slate-400 hover:text-red-500 transition-colors"
+                          title="Eliminar"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -256,13 +299,15 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
         </div>
       </div>
 
-      {/* MODAL: Agregar Egreso Futuro */}
+      {/* MODAL: Agregar/Editar Egreso Futuro */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-semibold text-slate-900">Nuevo Egreso Futuro</h3>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="font-semibold text-slate-900">
+                {editingEgreso ? 'Editar Egreso Futuro' : 'Nuevo Egreso Futuro'}
+              </h3>
+              <button onClick={resetForm} className="text-slate-400 hover:text-slate-600">
                 <X size={20} />
               </button>
             </div>
@@ -369,7 +414,7 @@ export const EgresosFuturosView: React.FC<EgresosFuturosViewProps> = ({
                   type="submit"
                   className="w-full py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 transition-colors shadow-lg shadow-brand-500/30"
                 >
-                  Guardar Egreso Futuro
+                  {editingEgreso ? 'Guardar Cambios' : 'Guardar Egreso Futuro'}
                 </button>
               </div>
             </form>

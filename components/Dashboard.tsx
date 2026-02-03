@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
-import { Transaction, FinancialSummary, ClienteActual, PagoCliente } from '../types';
-import { TrendingUp, TrendingDown, DollarSign, Wallet, Home, Users, Printer } from 'lucide-react';
+import { Transaction, FinancialSummary, ClienteActual, PagoCliente, EgresoFuturo } from '../types';
+import { TrendingUp, TrendingDown, DollarSign, Wallet, Home, Users, Printer, AlertCircle, Clock } from 'lucide-react';
 import jsPDF from 'jspdf';
 
 interface DashboardProps {
@@ -9,12 +9,19 @@ interface DashboardProps {
   summary: FinancialSummary;
   clientesActuales?: ClienteActual[];
   pagosClientes?: PagoCliente[];
+  egresosFuturos?: EgresoFuturo[];
 }
 
 const COLORS = ['#10b981', '#ef4444'];
 const COLORS_LOTES = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 
-export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, clientesActuales = [], pagosClientes = [] }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ 
+  transactions, 
+  summary, 
+  clientesActuales = [], 
+  pagosClientes = [],
+  egresosFuturos = []
+}) => {
   
   const chartData = useMemo(() => {
     // Group by month (last 6 months)
@@ -44,26 +51,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
   const totalValorLotes = clientesActuales.reduce((sum, c) => sum + (c.valorLote || 0), 0);
   const totalDepositosRecibidos = clientesActuales.reduce((sum, c) => sum + (c.depositoInicial || 0), 0);
   
-  // Calcular saldo pendiente correctamente: Valor Lote - Depósito Inicial - Total Pagado
+  // Calcular saldo pendiente correctamente
   const totalSaldoPendiente = clientesActuales.reduce((sum, c) => {
-  // Contar SOLO los abonos posteriores (excluyendo depósito inicial)
-  const abonosPosteriores = pagosClientes
-    .filter(p => p.clienteId === c.id && 
-                 p.tipoPago !== 'Depósito de Reserva' && 
-                 p.tipoPago !== 'Cuota Inicial')
-    .reduce((acc, p) => acc + (p.monto || 0), 0);
-  
-  // Total pagado = Depósito Inicial + Abonos posteriores
-  const totalPagadoCliente = (c.depositoInicial || 0) + abonosPosteriores;
-  
-  // Saldo pendiente = Valor lote - Total pagado
-  const saldoCliente = (c.valorLote || 0) - totalPagadoCliente;
-  return sum + Math.max(0, saldoCliente);
-}, 0);
+    const abonosPosteriores = pagosClientes
+      .filter(p => p.clienteId === c.id && 
+                   p.tipoPago !== 'Depósito de Reserva' && 
+                   p.tipoPago !== 'Cuota Inicial')
+      .reduce((acc, p) => acc + (p.monto || 0), 0);
+    
+    const totalPagadoCliente = (c.depositoInicial || 0) + abonosPosteriores;
+    const saldoCliente = (c.valorLote || 0) - totalPagadoCliente;
+    return sum + Math.max(0, saldoCliente);
+  }, 0);
   
   const porcentajePromedioPago = totalValorLotes > 0 ? Math.round((totalDepositosRecibidos / totalValorLotes) * 100) : 0;
   const clientesPagados = clientesActuales.filter(c => c.estado === 'pagado').length;
   const clientesEnCuota = clientesActuales.filter(c => c.estado === 'activo' || c.estado === 'mora').length;
+
+  // Métricas de egresos futuros
+  const egresosPendientes = egresosFuturos.filter(e => e.estado === 'pendiente');
+  const totalEgresosFuturos = egresosPendientes.reduce((sum, e) => sum + e.monto, 0);
+  const egresosProximos30Dias = egresosPendientes.filter(e => {
+    const fechaEgreso = new Date(e.fecha);
+    const hoy = new Date();
+    const diferenciaDias = Math.floor((fechaEgreso.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+    return diferenciaDias <= 30 && diferenciaDias >= 0;
+  });
+  const totalEgresosProximos = egresosProximos30Dias.reduce((sum, e) => sum + e.monto, 0);
 
   // Data para gráfico de cobranza por mes
   const cobranzaData = useMemo(() => {
@@ -77,7 +91,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
     }).reverse();
 
     return last6Months.map(item => {
-      // Simular cobranzas mensuales (en un caso real, vendrían de BD)
       const cobranzasDelMes = Math.floor(Math.random() * totalDepositosRecibidos / 6);
       return {
         name: item.mes,
@@ -200,6 +213,40 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
 
       y += 38;
 
+      // Sección de egresos futuros
+      if (egresosPendientes.length > 0) {
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 0, 0);
+        doc.text('Egresos Futuros Pendientes', 14, y);
+        y += 8;
+
+        // Tarjetas de egresos
+        doc.setFillColor(254, 242, 242);
+        doc.roundedRect(14, y, 88, 20, 3, 3, 'F');
+        doc.setFontSize(8);
+        doc.setTextColor(100, 100, 100);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Total Pendiente', 58, y + 7, { align: 'center' });
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(redColor[0], redColor[1], redColor[2]);
+        doc.text(`$${(totalEgresosFuturos / 1000).toFixed(0)}k`, 58, y + 15, { align: 'center' });
+
+        doc.setFillColor(255, 237, 213);
+        doc.roundedRect(108, y, 88, 20, 3, 3, 'F');
+        doc.setFontSize(8);
+        doc.setTextColor(100, 100, 100);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Próximos 30 días', 152, y + 7, { align: 'center' });
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(orangeColor[0], orangeColor[1], orangeColor[2]);
+        doc.text(`$${(totalEgresosProximos / 1000).toFixed(0)}k`, 152, y + 15, { align: 'center' });
+
+        y += 28;
+      }
+
       // Tabla de Balance Mensual
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
@@ -247,37 +294,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
         y += 7;
       });
 
-      y += 10;
-
-      // Distribución (simulación de gráfico de pastel con texto)
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(0, 0, 0);
-      doc.text('Distribución de Fondos', 14, y);
-      y += 8;
-
-      const totalFondos = summary.totalIncome + summary.totalExpense;
-      const porcentajeIngresos = totalFondos > 0 ? ((summary.totalIncome / totalFondos) * 100).toFixed(1) : 0;
-      const porcentajeEgresos = totalFondos > 0 ? ((summary.totalExpense / totalFondos) * 100).toFixed(1) : 0;
-
-      // Barras de porcentaje
-      doc.setFillColor(220, 252, 231);
-      doc.roundedRect(14, y, 182, 12, 2, 2, 'F');
-      doc.setFontSize(9);
-      doc.setTextColor(6, 95, 70);
-      doc.text(`Ingresos: ${porcentajeIngresos}%`, 20, y + 8);
-      doc.setFillColor(greenColor[0], greenColor[1], greenColor[2]);
-      doc.rect(14, y, (182 * parseFloat(porcentajeIngresos.toString())) / 100, 12, 'F');
-
-      y += 15;
-
-      doc.setFillColor(254, 226, 226);
-      doc.roundedRect(14, y, 182, 12, 2, 2, 'F');
-      doc.setTextColor(153, 27, 27);
-      doc.text(`Egresos: ${porcentajeEgresos}%`, 20, y + 8);
-      doc.setFillColor(redColor[0], redColor[1], redColor[2]);
-      doc.rect(14, y, (182 * parseFloat(porcentajeEgresos.toString())) / 100, 12, 'F');
-
       // ===== PÁGINA 3: INGRESOS POR VENTA DE LOTES =====
       if (clientesActuales.length > 0) {
         doc.addPage();
@@ -300,7 +316,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
         y += 8;
 
         // Fila 1
-        // Lotes vendidos
         doc.setFillColor(239, 246, 255);
         doc.roundedRect(14, y, 88, 25, 3, 3, 'F');
         doc.setFontSize(8);
@@ -312,7 +327,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
         doc.setTextColor(blueColor[0], blueColor[1], blueColor[2]);
         doc.text(totalLotes.toString(), 58, y + 18, { align: 'center' });
 
-        // Valor total
         doc.setFillColor(240, 253, 244);
         doc.roundedRect(108, y, 88, 25, 3, 3, 'F');
         doc.setFontSize(8);
@@ -327,7 +341,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
         y += 30;
 
         // Fila 2
-        // Ingresos recibidos
         doc.setFillColor(220, 252, 231);
         doc.roundedRect(14, y, 88, 25, 3, 3, 'F');
         doc.setFontSize(8);
@@ -339,7 +352,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
         doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
         doc.text(`$${(totalDepositosRecibidos / 1000000).toFixed(1)}M`, 58, y + 18, { align: 'center' });
 
-        // Saldo pendiente
         doc.setFillColor(255, 237, 213);
         doc.roundedRect(108, y, 88, 25, 3, 3, 'F');
         doc.setFontSize(8);
@@ -352,35 +364,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
         doc.text(`$${(totalSaldoPendiente / 1000000).toFixed(1)}M`, 152, y + 18, { align: 'center' });
 
         y += 35;
-
-        // Estado de Cobranza
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(0, 0, 0);
-        doc.text('Estado de Cobranza', 14, y);
-        y += 8;
-
-        doc.setFillColor(248, 250, 252);
-        doc.roundedRect(14, y, 182, 30, 3, 3, 'F');
-
-        // Porcentaje de cobranza
-        doc.setFontSize(10);
-        doc.setTextColor(71, 85, 105);
-        doc.setFont('helvetica', 'normal');
-        doc.text('Cobranza Promedio:', 20, y + 10);
-        doc.setFontSize(24);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
-        doc.text(`${porcentajePromedioPago}%`, 80, y + 12);
-
-        // Clientes en cuota y pagados
-        doc.setFontSize(9);
-        doc.setTextColor(71, 85, 105);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Clientes en Cuota: ${clientesEnCuota}`, 20, y + 22);
-        doc.text(`Clientes Pagados: ${clientesPagados}`, 100, y + 22);
-
-        y += 38;
 
         // Top 5 Clientes
         doc.setFontSize(11);
@@ -407,10 +390,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
         // Datos
         doc.setFont('helvetica', 'normal');
         clientesActuales.slice(0, 5).forEach((cliente, i) => {
-          const totalPagadoCliente = pagosClientes
-            .filter(p => p.clienteId === cliente.id)
+          const abonosPosteriores = pagosClientes
+            .filter(p => p.clienteId === cliente.id && 
+                         p.tipoPago !== 'Depósito de Reserva' && 
+                         p.tipoPago !== 'Cuota Inicial')
             .reduce((acc, p) => acc + (p.monto || 0), 0);
-          const saldoPendiente = (cliente.valorLote || 0) - (cliente.depositoInicial || 0) - totalPagadoCliente;
+          
+          const totalPagadoCliente = (cliente.depositoInicial || 0) + abonosPosteriores;
+          const saldoPendiente = (cliente.valorLote || 0) - totalPagadoCliente;
 
           if (i % 2 === 0) {
             doc.setFillColor(252, 252, 253);
@@ -459,7 +446,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
       const pageCount = doc.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
-        if (i > 1) { // No poner footer en portada
+        if (i > 1) {
           doc.setFontSize(7);
           doc.setFont('helvetica', 'normal');
           doc.setTextColor(148, 163, 184);
@@ -531,6 +518,90 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
         </div>
       </div>
 
+      {/* SECCIÓN: Egresos Futuros (SI HAY PENDIENTES) */}
+      {egresosPendientes.length > 0 && (
+        <div className="bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200 rounded-xl p-6">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-orange-100 rounded-lg">
+                <AlertCircle size={24} className="text-orange-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">⚠️ Egresos Futuros Pendientes</h3>
+                <p className="text-sm text-slate-600">Obligaciones programadas próximas</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Total pendiente */}
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Total Pendiente</p>
+                  <p className="text-2xl font-bold text-red-600">${totalEgresosFuturos.toLocaleString()}</p>
+                  <p className="text-xs text-slate-500 mt-1">{egresosPendientes.length} egresos</p>
+                </div>
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <DollarSign size={20} className="text-red-600" />
+                </div>
+              </div>
+            </div>
+
+            {/* Próximos 30 días */}
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Próximos 30 Días</p>
+                  <p className="text-2xl font-bold text-orange-600">${totalEgresosProximos.toLocaleString()}</p>
+                  <p className="text-xs text-slate-500 mt-1">{egresosProximos30Dias.length} egresos</p>
+                </div>
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <Clock size={20} className="text-orange-600" />
+                </div>
+              </div>
+            </div>
+
+            {/* Balance proyectado */}
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Balance Proyectado</p>
+                  <p className={`text-2xl font-bold ${(summary.balance - totalEgresosProximos) >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    ${(summary.balance - totalEgresosProximos).toLocaleString()}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Después de 30 días</p>
+                </div>
+                <div className={`p-2 rounded-lg ${(summary.balance - totalEgresosProximos) >= 0 ? 'bg-blue-100' : 'bg-red-100'}`}>
+                  <Wallet size={20} className={(summary.balance - totalEgresosProximos) >= 0 ? 'text-blue-600' : 'text-red-600'} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Lista de próximos egresos urgentes */}
+          {egresosProximos30Dias.length > 0 && (
+            <div className="mt-4 bg-white rounded-lg p-4">
+              <h4 className="text-sm font-semibold text-slate-700 mb-3">Próximos Egresos Urgentes</h4>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {egresosProximos30Dias.slice(0, 5).map((egreso) => (
+                  <div key={egreso.id} className="flex items-center justify-between p-2 bg-slate-50 rounded hover:bg-slate-100 transition-colors">
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-900">{egreso.categoria}</p>
+                      <p className="text-xs text-slate-500">{new Date(egreso.fecha).toLocaleDateString('es-CO')}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-orange-600">${egreso.monto.toLocaleString()}</p>
+                      <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded">{egreso.tipo}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-[400px]">
@@ -591,7 +662,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
 
           {/* KPI Cards de Lotes */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Lotes vendidos */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -605,7 +675,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
               </div>
             </div>
 
-            {/* Valor total de lotes */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -619,7 +688,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
               </div>
             </div>
 
-            {/* Ingresos recibidos */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -633,7 +701,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
               </div>
             </div>
 
-            {/* Saldo pendiente */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -650,7 +717,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
 
           {/* Gráficos de Lotes */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Cobranzas vs Meta */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-[350px]">
               <h3 className="text-lg font-semibold text-slate-800 mb-4">Cobranzas Mensuales</h3>
               <ResponsiveContainer width="100%" height="100%">
@@ -668,11 +734,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
               </ResponsiveContainer>
             </div>
 
-            {/* Porcentaje de Cobranza */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
               <h3 className="text-lg font-semibold text-slate-800 mb-6">Estado de Cobranza</h3>
               <div className="space-y-6">
-                {/* Porcentaje visual */}
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-slate-600 mb-2">Cobranza Promedio</p>
@@ -706,7 +770,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
                   </div>
                 </div>
 
-                {/* Estado de clientes */}
                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
                   <div>
                     <p className="text-sm text-slate-600 mb-2">En Cuota</p>
@@ -734,86 +797,72 @@ export const Dashboard: React.FC<DashboardProps> = ({ transactions, summary, cli
           </div>
 
           {/* Tabla de Clientes por Lote */}
-<div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-  <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
-    <h4 className="font-semibold text-slate-900">Clientes por Lote (Top 5)</h4>
-  </div>
-  <div className="overflow-x-auto">
-    <table className="w-full text-left text-sm text-slate-600">
-      <thead className="bg-slate-50 text-slate-900 font-semibold uppercase text-xs">
-        <tr>
-          <th className="px-6 py-4">Cliente</th>
-          <th className="px-6 py-4">Lote</th>
-          <th className="px-6 py-4 text-right">Valor Lote</th>
-          <th className="px-6 py-4 text-right">Depósito Inicial</th>
-          {/* ✅ NUEVA COLUMNA */}
-          <th className="px-6 py-4 text-right">Abonos Posteriores</th>
-          <th className="px-6 py-4 text-right">Total Pagado</th>
-          <th className="px-6 py-4 text-right">Saldo Pendiente</th>
-          <th className="px-6 py-4">Estado</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
-        {clientesActuales.slice(0, 5).map((cliente) => {
-          // ✅ Cálculo correcto de abonos
-          const abonosPosteriores = pagosClientes
-            .filter(p => p.clienteId === cliente.id && 
-                         p.tipoPago !== 'Depósito de Reserva' && 
-                         p.tipoPago !== 'Cuota Inicial')
-            .reduce((acc, p) => acc + (p.monto || 0), 0);
-          
-          // ✅ Total pagado = Depósito + Abonos
-          const totalPagadoCliente = (cliente.depositoInicial || 0) + abonosPosteriores;
-          
-          // ✅ Saldo pendiente correcto
-          const saldoPendiente = (cliente.valorLote || 0) - totalPagadoCliente;
-          
-          return (
-            <tr key={cliente.id} className="hover:bg-slate-50 transition-colors">
-              <td className="px-6 py-4 font-medium text-slate-900">{cliente.nombre}</td>
-              <td className="px-6 py-4">#{cliente.numeroLote}</td>
-              <td className="px-6 py-4 text-right font-semibold">${cliente.valorLote?.toLocaleString() || 0}</td>
-              
-              {/* Depósito Inicial (verde) */}
-              <td className="px-6 py-4 text-right font-semibold text-emerald-600">
-                ${cliente.depositoInicial?.toLocaleString() || 0}
-              </td>
-              
-              {/* ✅ NUEVA: Abonos Posteriores (azul) */}
-              <td className="px-6 py-4 text-right font-semibold text-blue-600">
-                ${abonosPosteriores.toLocaleString()}
-              </td>
-              
-              {/* Total Pagado (suma de depósito + abonos) */}
-              <td className="px-6 py-4 text-right font-semibold text-blue-600">
-                ${totalPagadoCliente.toLocaleString()}
-              </td>
-              
-              {/* Saldo Pendiente (Valor Lote - Total Pagado) */}
-              <td className="px-6 py-4 text-right font-semibold text-orange-600">
-                ${Math.max(0, saldoPendiente).toLocaleString()}
-              </td>
-              
-              <td className="px-6 py-4">
-                <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    cliente.estado === 'pagado'
-                      ? 'bg-green-100 text-green-800'
-                      : cliente.estado === 'mora'
-                      ? 'bg-red-100 text-red-800'
-                      : 'bg-blue-100 text-blue-800'
-                  }`}
-                >
-                  {cliente.estado}
-                </span>
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  </div>
-</div>
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+              <h4 className="font-semibold text-slate-900">Clientes por Lote (Top 5)</h4>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-600">
+                <thead className="bg-slate-50 text-slate-900 font-semibold uppercase text-xs">
+                  <tr>
+                    <th className="px-6 py-4">Cliente</th>
+                    <th className="px-6 py-4">Lote</th>
+                    <th className="px-6 py-4 text-right">Valor Lote</th>
+                    <th className="px-6 py-4 text-right">Depósito Inicial</th>
+                    <th className="px-6 py-4 text-right">Abonos Posteriores</th>
+                    <th className="px-6 py-4 text-right">Total Pagado</th>
+                    <th className="px-6 py-4 text-right">Saldo Pendiente</th>
+                    <th className="px-6 py-4">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {clientesActuales.slice(0, 5).map((cliente) => {
+                    const abonosPosteriores = pagosClientes
+                      .filter(p => p.clienteId === cliente.id && 
+                                   p.tipoPago !== 'Depósito de Reserva' && 
+                                   p.tipoPago !== 'Cuota Inicial')
+                      .reduce((acc, p) => acc + (p.monto || 0), 0);
+                    
+                    const totalPagadoCliente = (cliente.depositoInicial || 0) + abonosPosteriores;
+                    const saldoPendiente = (cliente.valorLote || 0) - totalPagadoCliente;
+                    
+                    return (
+                      <tr key={cliente.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4 font-medium text-slate-900">{cliente.nombre}</td>
+                        <td className="px-6 py-4">#{cliente.numeroLote}</td>
+                        <td className="px-6 py-4 text-right font-semibold">${cliente.valorLote?.toLocaleString() || 0}</td>
+                        <td className="px-6 py-4 text-right font-semibold text-emerald-600">
+                          ${cliente.depositoInicial?.toLocaleString() || 0}
+                        </td>
+                        <td className="px-6 py-4 text-right font-semibold text-blue-600">
+                          ${abonosPosteriores.toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4 text-right font-semibold text-blue-600">
+                          ${totalPagadoCliente.toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4 text-right font-semibold text-orange-600">
+                          ${Math.max(0, saldoPendiente).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              cliente.estado === 'pagado'
+                                ? 'bg-green-100 text-green-800'
+                                : cliente.estado === 'mora'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}
+                          >
+                            {cliente.estado}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </>
       )}
     </div>
