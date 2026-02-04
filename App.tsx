@@ -294,6 +294,7 @@ const App = () => {
     }
   };
 
+
   const updateNoteStatus = async (id: string, status: 'futuro' | 'tratado') => {
     setData(prev => ({
       ...prev,
@@ -316,6 +317,22 @@ const App = () => {
        console.error(e);
      }
   };
+
+// ✅ NUEVO: Handler para editar notas
+const editNote = async (id: string, updates: Partial<Note>) => {
+  setData(prev => ({
+    ...prev,
+    notes: prev.notes.map(n => n.id === id ? { ...n, ...updates } : n)
+  }));
+  try {
+    // Aquí irría la llamada a API si existe
+    // await apiUpdateNote(id, updates);
+    logAction("Editar Nota", `ID: ${id} - Actualizada`);
+  } catch (e) {
+    console.error(e);
+    alert("Error actualizando nota");
+  }
+};
 
   const addUser = async (name: string, pass: string, email: string) => {
     const newUser: User = { 
@@ -1045,14 +1062,14 @@ const handleDeleteObra = async (id: string) => {
           )}
 
           {activeTab === 'notes' && (
-            <NotesManager 
-              notes={data.notes}
-              onAdd={addNote}
-              onUpdateStatus={updateNoteStatus}
-              onDelete={deleteNote}
-            />
-          )}
-
+  <NotesManager 
+    notes={data.notes}
+    onAdd={addNote}
+    onEdit={editNote}  // ← AGREGAR ESTA LÍNEA
+    onUpdateStatus={updateNoteStatus}
+    onDelete={deleteNote}
+  />
+)}
           {activeTab === 'logs' && (
             <AuditLogView logs={data.logs} />
           )}

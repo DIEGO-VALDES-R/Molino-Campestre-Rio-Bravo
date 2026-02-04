@@ -22,6 +22,16 @@ export type EtapaObra =
   | 'escrituracion'
   | 'terminada';
 
+
+export interface Note {
+  id: string;
+  title: string;
+  content: string;
+  category: 'tema' | 'nota' | 'recordatorio';
+  status: 'futuro' | 'tratado';
+  createdAt: string;
+}
+
 /**
  * Hito o evento importante en la obra
  */

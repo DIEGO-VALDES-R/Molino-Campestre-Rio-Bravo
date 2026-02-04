@@ -8,7 +8,7 @@ interface TransactionListProps {
   transactions: Transaction[];
   onAdd: (t: Omit<Transaction, 'id'>) => void;
   onDelete: (id: string) => void;
-  onUpdate?: (id: string, updates: Partial<Transaction>) => void;
+  onEdit: (id: string, updates: Partial<Transaction>) => Promise<void>; // ✅ AJUSTE 1: SOLO ESTE
   users: User[];
   currentUser: User;
 }
@@ -17,7 +17,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   transactions, 
   onAdd, 
   onDelete, 
-  onUpdate,
+  onEdit, // ✅ AJUSTE 1: DESTRUCTURAR SOLO ESTE
   users, 
   currentUser 
 }) => {
@@ -66,12 +66,13 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     setAttachments(attachments.filter(a => a.id !== id));
   };
 
+  // ✅ AJUSTE 2: COMPLETAR openEditModal CON description
   const openEditModal = (transaction: Transaction) => {
     setEditingTransaction(transaction);
     setType(transaction.type);
     setAmount(transaction.amount.toString());
     setCategory(transaction.category);
-    setDescription(transaction.description);
+    setDescription(transaction.description); // ✅ ESTA LÍNEA ES IMPORTANTE
     setDate(transaction.date);
     setAttachments(transaction.attachments || []);
     setIsModalOpen(true);
@@ -88,33 +89,39 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     setIsModalOpen(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // ✅ AJUSTE 3: CONVERTIR handleSubmit A ASYNC Y USAR onEdit
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (editingTransaction && onUpdate) {
-      // Editar transacción existente
-      onUpdate(editingTransaction.id, {
-        date,
-        type,
-        amount: parseFloat(amount),
-        category,
-        description,
-        attachments: attachments.length > 0 ? attachments : undefined
-      });
-    } else {
-      // Crear nueva transacción
-      onAdd({
-        date,
-        type,
-        amount: parseFloat(amount),
-        category,
-        description,
-        user: currentUser.name,
-        attachments: attachments.length > 0 ? attachments : undefined
-      });
+    try {
+      if (editingTransaction) {
+        // Editar transacción existente - USAR onEdit (async)
+        await onEdit(editingTransaction.id, {
+          date,
+          type,
+          amount: parseFloat(amount),
+          category,
+          description,
+          attachments: attachments.length > 0 ? attachments : undefined
+        });
+      } else {
+        // Crear nueva transacción
+        onAdd({
+          date,
+          type,
+          amount: parseFloat(amount),
+          category,
+          description,
+          user: currentUser.name,
+          attachments: attachments.length > 0 ? attachments : undefined
+        });
+      }
+      
+      resetForm();
+    } catch (error) {
+      console.error('Error en handleSubmit:', error);
+      alert('Error al guardar la transacción');
     }
-    
-    resetForm();
   };
 
   const handlePrint = () => {
@@ -367,15 +374,14 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">
-                        {onUpdate && (
-                          <button
-                            onClick={() => openEditModal(t)}
-                            className="text-slate-400 hover:text-blue-500 transition-colors"
-                            title="Editar"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                        )}
+                        {/* ✅ AJUSTE 4: ELIMINAR CONDICIÓN {onUpdate &&} */}
+                        <button
+                          onClick={() => openEditModal(t)}
+                          className="text-slate-400 hover:text-blue-500 transition-colors"
+                          title="Editar"
+                        >
+                          <Edit2 size={16} />
+                        </button>
                         <button 
                           onClick={() => onDelete(t.id)}
                           className="text-slate-400 hover:text-red-500 transition-colors"

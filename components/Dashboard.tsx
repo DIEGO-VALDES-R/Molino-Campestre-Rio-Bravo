@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { Transaction, FinancialSummary, ClienteActual, PagoCliente, EgresoFuturo } from '../types';
-import { TrendingUp, TrendingDown, DollarSign, Wallet, Home, Users, Printer, AlertCircle, Clock } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Wallet, Home, Users, Printer, AlertCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import jsPDF from 'jspdf';
 
 interface DashboardProps {
@@ -23,6 +23,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   egresosFuturos = []
 }) => {
   
+  // ✅ NUEVO: Estado para expandir/contraer egresos
+  const [expandEgresos, setExpandEgresos] = React.useState(false);
+
   const chartData = useMemo(() => {
     // Group by month (last 6 months)
     const last6Months = Array.from({ length: 6 }, (_, i) => {
@@ -30,7 +33,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
       d.setMonth(d.getMonth() - i);
       return d.toISOString().slice(0, 7); // YYYY-MM
     }).reverse();
-
     return last6Months.map(month => {
       const monthlyTrans = transactions.filter(t => t.date.startsWith(month));
       return {
@@ -68,16 +70,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const clientesPagados = clientesActuales.filter(c => c.estado === 'pagado').length;
   const clientesEnCuota = clientesActuales.filter(c => c.estado === 'activo' || c.estado === 'mora').length;
 
-  // Métricas de egresos futuros
+  // ✅ CORREGIDO: Métricas de egresos futuros
   const egresosPendientes = egresosFuturos.filter(e => e.estado === 'pendiente');
-  const totalEgresosFuturos = egresosPendientes.reduce((sum, e) => sum + e.monto, 0);
+  const totalEgresosFuturos = egresosPendientes.reduce((sum, e) => sum + (e.monto || 0), 0);
+  
   const egresosProximos30Dias = egresosPendientes.filter(e => {
     const fechaEgreso = new Date(e.fecha);
     const hoy = new Date();
     const diferenciaDias = Math.floor((fechaEgreso.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
     return diferenciaDias <= 30 && diferenciaDias >= 0;
   });
-  const totalEgresosProximos = egresosProximos30Dias.reduce((sum, e) => sum + e.monto, 0);
+  
+  const totalEgresosProximos = egresosProximos30Dias.reduce((sum, e) => sum + (e.monto || 0), 0);
 
   // Data para gráfico de cobranza por mes
   const cobranzaData = useMemo(() => {
@@ -89,7 +93,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         mes: new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString('es-CO', { month: 'short', year: '2-digit' })
       };
     }).reverse();
-
     return last6Months.map(item => {
       const cobranzasDelMes = Math.floor(Math.random() * totalDepositosRecibidos / 6);
       return {
@@ -160,7 +163,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
       doc.text('Resumen Financiero General', 105, 18, { align: 'center' });
-
       let y = 45;
 
       // KPIs principales (3 tarjetas)
@@ -210,7 +212,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         balancePositivo ? blueColor[2] : orangeColor[2]
       );
       doc.text(`$${summary.balance.toLocaleString()}`, 167, y + 20, { align: 'center' });
-
       y += 38;
 
       // Sección de egresos futuros
@@ -243,7 +244,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(orangeColor[0], orangeColor[1], orangeColor[2]);
         doc.text(`$${(totalEgresosProximos / 1000).toFixed(0)}k`, 152, y + 15, { align: 'center' });
-
         y += 28;
       }
 
@@ -264,7 +264,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
       doc.text('Ingresos', 80, y + 5, { align: 'right' });
       doc.text('Egresos', 130, y + 5, { align: 'right' });
       doc.text('Balance', 180, y + 5, { align: 'right' });
-
       y += 10;
 
       // Datos de la tabla
@@ -274,7 +273,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           doc.setFillColor(252, 252, 253);
           doc.rect(14, y - 3, 182, 7, 'F');
         }
-
         const balance = item.Ingresos - item.Egresos;
         
         doc.setTextColor(0, 0, 0);
@@ -290,11 +288,90 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         balance >= 0 ? greenColor[1] : redColor[1],
                         balance >= 0 ? greenColor[2] : redColor[2]);
         doc.text(`$${balance.toLocaleString()}`, 180, y + 2, { align: 'right' });
-
         y += 7;
       });
 
-      // ===== PÁGINA 3: INGRESOS POR VENTA DE LOTES =====
+      // ===== PÁGINA 3 (NUEVA): DETALLE DE EGRESOS FUTUROS =====
+      if (egresosPendientes.length > 0) {
+        doc.addPage();
+        
+        // Encabezado
+        doc.setFillColor(redColor[0], redColor[1], redColor[2]);
+        doc.rect(0, 0, 210, 30, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Detalle de Egresos Futuros Pendientes', 105, 18, { align: 'center' });
+        
+        y = 45;
+        
+        // Tabla de egresos
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y, 182, 8, 'F');
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(71, 85, 105);
+        doc.text('Fecha', 20, y + 5);
+        doc.text('Categoría', 50, y + 5);
+        doc.text('Tipo', 95, y + 5);
+        doc.text('Descripción', 125, y + 5);
+        doc.text('Monto', 180, y + 5, { align: 'right' });
+        y += 10;
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        
+        // Ordenar egresos por fecha
+        const egresosOrdenados = [...egresosPendientes].sort((a, b) => 
+          new Date(a.fecha).getTime() - new Date(b.fecha).getTime()
+        );
+        
+        // Mostrar todos los egresos (máximo caben en la página)
+        let egresosEnPagina = 0;
+        for (let i = 0; i < egresosOrdenados.length && y < 270; i++) {
+          const egreso = egresosOrdenados[i];
+          
+          if (egresosEnPagina % 2 === 0) {
+            doc.setFillColor(252, 252, 253);
+            doc.rect(14, y - 3, 182, 7, 'F');
+          }
+          
+          // Fecha
+          doc.setTextColor(0, 0, 0);
+          doc.text(new Date(egreso.fecha).toLocaleDateString('es-ES'), 20, y + 2);
+          
+          // Categoría
+          doc.text(egreso.categoria.substring(0, 20), 50, y + 2);
+          
+          // Tipo
+          doc.text(egreso.tipo, 95, y + 2);
+          
+          // Descripción
+          const descCorta = egreso.descripcion ? egreso.descripcion.substring(0, 25) : '-';
+          doc.text(descCorta, 125, y + 2);
+          
+          // Monto
+          doc.setTextColor(redColor[0], redColor[1], redColor[2]);
+          doc.setFont('helvetica', 'bold');
+          doc.text(`$${egreso.monto.toLocaleString()}`, 180, y + 2, { align: 'right' });
+          
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(0, 0, 0);
+          
+          y += 7;
+          egresosEnPagina++;
+        }
+        
+        // Si hay más egresos, mostrar que hay más
+        if (egresosOrdenados.length > egresosEnPagina && y >= 265) {
+          y = 273;
+          doc.setFontSize(7);
+          doc.setTextColor(148, 163, 184);
+          doc.text(`+ ${egresosOrdenados.length - egresosEnPagina} egresos adicionales...`, 14, y);
+        }
+      }
+
+      // ===== PÁGINA 4: INGRESOS POR VENTA DE LOTES =====
       if (clientesActuales.length > 0) {
         doc.addPage();
         
@@ -305,7 +382,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
         doc.text('Ingresos por Venta de Lotes', 105, 18, { align: 'center' });
-
         y = 45;
 
         // KPIs de Lotes (2x2)
@@ -337,7 +413,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(greenColor[0], greenColor[1], greenColor[2]);
         doc.text(`$${(totalValorLotes / 1000000).toFixed(1)}M`, 152, y + 18, { align: 'center' });
-
         y += 30;
 
         // Fila 2
@@ -362,7 +437,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(orangeColor[0], orangeColor[1], orangeColor[2]);
         doc.text(`$${(totalSaldoPendiente / 1000000).toFixed(1)}M`, 152, y + 18, { align: 'center' });
-
         y += 35;
 
         // Top 5 Clientes
@@ -384,7 +458,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         doc.text('Pagado', 115, y + 5);
         doc.text('Pendiente', 150, y + 5);
         doc.text('Estado', 182, y + 5);
-
         y += 10;
 
         // Datos
@@ -437,7 +510,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           doc.setFontSize(6);
           doc.text(cliente.estado.toUpperCase(), 184, y + 1.5, { align: 'center' });
           doc.setFontSize(7);
-
           y += 7;
         });
       }
@@ -518,11 +590,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* SECCIÓN: Egresos Futuros (SI HAY PENDIENTES) */}
+      {/* SECCIÓN: Egresos Futuros (SI HAY PENDIENTES) - MEJORADO */}
       {egresosPendientes.length > 0 && (
         <div className="bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200 rounded-xl p-6">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-3">
               <div className="p-3 bg-orange-100 rounded-lg">
                 <AlertCircle size={24} className="text-orange-600" />
               </div>
@@ -531,9 +603,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <p className="text-sm text-slate-600">Obligaciones programadas próximas</p>
               </div>
             </div>
+            {/* ✅ NUEVO: Botón para expandir/contraer */}
+            <button
+              onClick={() => setExpandEgresos(!expandEgresos)}
+              className="p-2 hover:bg-orange-100 rounded-lg transition-colors"
+              title={expandEgresos ? 'Contraer' : 'Expandir'}
+            >
+              {expandEgresos ? (
+                <ChevronUp size={20} className="text-orange-600" />
+              ) : (
+                <ChevronDown size={20} className="text-orange-600" />
+              )}
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             {/* Total pendiente */}
             <div className="bg-white rounded-lg p-4 shadow-sm">
               <div className="flex items-center justify-between">
@@ -579,23 +663,56 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
 
-          {/* Lista de próximos egresos urgentes */}
-          {egresosProximos30Dias.length > 0 && (
-            <div className="mt-4 bg-white rounded-lg p-4">
-              <h4 className="text-sm font-semibold text-slate-700 mb-3">Próximos Egresos Urgentes</h4>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {egresosProximos30Dias.slice(0, 5).map((egreso) => (
-                  <div key={egreso.id} className="flex items-center justify-between p-2 bg-slate-50 rounded hover:bg-slate-100 transition-colors">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-900">{egreso.categoria}</p>
-                      <p className="text-xs text-slate-500">{new Date(egreso.fecha).toLocaleDateString('es-CO')}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-orange-600">${egreso.monto.toLocaleString()}</p>
-                      <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded">{egreso.tipo}</span>
-                    </div>
-                  </div>
-                ))}
+          {/* ✅ LISTA DE TODOS LOS EGRESOS - EXPANDIBLE */}
+          {expandEgresos && (
+            <div className="mt-4 bg-white rounded-lg p-4 max-h-96 overflow-y-auto">
+              <h4 className="text-sm font-semibold text-slate-700 mb-3">
+                📋 Todos los Egresos Pendientes ({egresosPendientes.length})
+              </h4>
+              <div className="space-y-2">
+                {egresosPendientes
+                  .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
+                  .map((egreso) => {
+                    const diasFalta = Math.floor((new Date(egreso.fecha).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                    const esUrgente = diasFalta <= 7;
+
+                    return (
+                      <div 
+                        key={egreso.id} 
+                        className={`flex items-center justify-between p-3 rounded-lg transition-colors ${
+                          esUrgente 
+                            ? 'bg-red-50 border border-red-200 hover:bg-red-100' 
+                            : 'bg-slate-50 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-slate-900">{egreso.categoria}</p>
+                            {esUrgente && (
+                              <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">
+                                ¡URGENTE! ({diasFalta}d)
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className="text-xs text-slate-500">{egreso.tipo}</p>
+                            <p className="text-xs text-slate-600">
+                              📅 {new Date(egreso.fecha).toLocaleDateString('es-CO')}
+                            </p>
+                            {egreso.descripcion && (
+                              <p className="text-xs text-slate-500 italic">"{egreso.descripcion}"</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right ml-4">
+                          <p className="text-sm font-bold text-orange-600">${egreso.monto.toLocaleString()}</p>
+                          <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded">
+                            {egreso.tipo}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           )}

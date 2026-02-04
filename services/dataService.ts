@@ -170,6 +170,25 @@ export const apiDeleteTransaction = async (id: string) => {
   if (error) throw error;
 };
 
+export const apiUpdateTransaction = async (id: string, updates: Partial<Transaction>) => {
+  try {
+    const response = await fetch(`/api/transactions/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    
+    if (!response.ok) {
+      throw new Error('Error updating transaction');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error en apiUpdateTransaction:', error);
+    throw error;
+  }
+};
+
 // --- Notes ---
 
 export const apiCreateNote = async (note: Note) => {
