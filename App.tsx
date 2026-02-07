@@ -580,30 +580,127 @@ const editNote = async (id: string, updates: Partial<Note>) => {
     }
   };
 
-  const handleUpdateEgresoFuturo = async (id: string, updates: Partial<EgresoFuturo>) => {
-    setData(prev => ({
-      ...prev,
-      egresosFuturos: prev.egresosFuturos.map(e => e.id === id ? { ...e, ...updates } : e)
-    }));
-    try {
+ const handleUpdateEgresoFuturo = async (id: string, updates: Partial<EgresoFuturo>) => {
+  console.log('🔵 Iniciando handleUpdateEgresoFuturo');
+  console.log('📋 ID:', id);
+  console.log('📋 Updates:', updates);
+  
+  const egresoActual = data.egresosFuturos.find(e => e.id === id);
+  console.log('📋 Egreso actual:', egresoActual);
+  
+  if (!egresoActual) {
+    console.error('❌ No se encontró el egreso');
+    alert('Error: No se encontró el egreso');
+    return;
+  }
+  
+  try {
+    // ✅ DETECTAR SI ES CAMBIO A PAGADO
+    const esCambioAPagado = updates.estado === 'pagado' && egresoActual.estado !== 'pagado';
+    console.log('💡 ¿Es cambio a pagado?', esCambioAPagado);
+    
+    if (esCambioAPagado) {
+      console.log('💰 Creando transacción de egreso...');
+      
+      const nuevaTransaccion: Transaction = {
+        id: crypto.randomUUID(),
+        date: egresoActual.fecha,
+        type: 'egreso',
+        amount: egresoActual.monto,
+        category: egresoActual.categoria,
+        description: egresoActual.descripcion || `Egreso futuro pagado: ${egresoActual.categoria}`,
+        user: currentUser?.name || 'Sistema',
+        attachments: egresoActual.adjuntos
+      };
+      
+      console.log('💰 Nueva transacción creada:', nuevaTransaccion);
+      
+      // 1. Guardar transacción en BD
+      await apiCreateTransaction(nuevaTransaccion);
+      console.log('✅ Transacción guardada en BD');
+      
+      // 2. Actualizar egreso en BD
       await updateEgresoFuturo(id, updates);
-      logAction('Actualizar egreso futuro', `ID: ${id}`);
-    } catch (e) {
-      console.error(e);
+      console.log('✅ Egreso actualizado en BD');
+      
+      // 3. Actualizar estado local (TODO junto)
+      setData(prev => ({ 
+        ...prev, 
+        transactions: [nuevaTransaccion, ...prev.transactions],
+        egresosFuturos: prev.egresosFuturos.map(e => 
+          e.id === id ? { ...e, ...updates } : e
+        )
+      }));
+      console.log('✅ Estado local actualizado');
+      
+      // 4. Log de auditoría
+      await logAction(
+        'Egreso futuro pagado', 
+        `${egresoActual.categoria} - $${egresoActual.monto.toLocaleString()}`
+      );
+      console.log('✅ Log de auditoría creado');
+      
+      alert(
+        `✅ EGRESO REGISTRADO COMO PAGADO\n\n` +
+        `Categoría: ${egresoActual.categoria}\n` +
+        `Monto: $${egresoActual.monto.toLocaleString()}\n` +
+        `Fecha: ${egresoActual.fecha}\n\n` +
+        `Se ha creado una transacción de egreso y el saldo ha sido actualizado.`
+      );
+      
+    } else {
+      // Solo actualizar sin crear transacción
+      console.log('📝 Actualizando egreso sin crear transacción');
+      
+      await updateEgresoFuturo(id, updates);
+      
+      setData(prev => ({
+        ...prev,
+        egresosFuturos: prev.egresosFuturos.map(e => 
+          e.id === id ? { ...e, ...updates } : e
+        )
+      }));
+      
+      await logAction('Actualizar egreso futuro', `ID: ${id}`);
+      console.log('✅ Egreso actualizado (sin transacción)');
     }
-  };
+    
+  } catch (error) {
+    console.error('❌ ERROR en handleUpdateEgresoFuturo:', error);
+    alert(`Error: ${(error as Error).message}`);
+    
+    // Recargar datos
+    try {
+      const allData = await fetchAllData();
+      setData(prev => ({
+        ...prev,
+        egresosFuturos: allData.egresosFuturos,
+        transactions: allData.transactions
+      }));
+    } catch (reloadError) {
+      console.error('❌ Error recargando:', reloadError);
+    }
+  }
+};
 
-  const handleDeleteEgresoFuturo = async (id: string) => {
-    if (window.confirm('¿Eliminar este egreso futuro?')) {
-      setData(prev => ({ ...prev, egresosFuturos: prev.egresosFuturos.filter(e => e.id !== id) }));
-      try {
-        await deleteEgresoFuturo(id);
-        logAction('Eliminar egreso futuro', `ID: ${id}`);
-      } catch (e) {
-        console.error(e);
-      }
+// ... (tu función handleUpdateEgresoFuturo) ...
+
+const handleDeleteEgresoFuturo = async (id: string) => {
+  if (window.confirm('¿Está seguro de que desea eliminar este egreso futuro?')) {
+    setData(prev => ({ 
+      ...prev, 
+      egresosFuturos: prev.egresosFuturos.filter(e => e.id !== id) 
+    }));
+    
+    try {
+      await deleteEgresoFuturo(id);
+      await logAction('Eliminar egreso futuro', `ID: ${id}`);
+    } catch (e) {
+      console.error('Error eliminando egreso futuro:', e);
+      alert('Error al eliminar el egreso futuro');
     }
-  };
+  }
+};
 
   // --- Handlers para Lotes ---
   const handleAddLote = async (lote: Omit<Lote, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -992,14 +1089,29 @@ const handleDeleteObra = async (id: string) => {
           )}
 
           {activeTab === 'transactions' && (
-            <TransactionList 
-              transactions={data.transactions} 
-              onAdd={addTransaction} 
-              onDelete={deleteTransaction}
-              users={data.users}
-              currentUser={currentUser}
-            />
-          )}
+  <TransactionList 
+    transactions={data.transactions} 
+    onAdd={addTransaction} 
+    onDelete={deleteTransaction}
+    onEdit={async (id, updates) => {  // ✅ AGREGAR ESTA FUNCIÓN
+      setData(prev => ({
+        ...prev,
+        transactions: prev.transactions.map(t => 
+          t.id === id ? { ...t, ...updates } : t
+        )
+      }));
+      try {
+        await apiUpdateTransaction(id, updates);
+        await logAction('Editar Transacción', `ID: ${id}`);
+      } catch (e) {
+        console.error(e);
+        alert('Error actualizando transacción');
+      }
+    }}
+    users={data.users}
+    currentUser={currentUser}
+  />
+)}
 
           {activeTab === 'clientes' && (
             <ClientesView
