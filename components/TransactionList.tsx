@@ -102,7 +102,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           amount: parseFloat(amount),
           category,
           description,
-          attachments: attachments.length > 0 ? attachments : undefined
+          attachments: attachments  // ✅ Siempre incluir (no usar condicional)
         });
       } else {
         // Crear nueva transacción

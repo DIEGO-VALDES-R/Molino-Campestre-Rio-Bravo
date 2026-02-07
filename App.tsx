@@ -32,6 +32,7 @@ import { Lote } from './types';
 import { 
   fetchAllData,
   apiCreateTransaction,
+  apiUpdateTransaction,
   apiDeleteTransaction,
   apiCreateNote,
   apiUpdateNoteStatus,

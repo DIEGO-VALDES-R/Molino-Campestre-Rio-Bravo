@@ -172,19 +172,17 @@ export const apiDeleteTransaction = async (id: string) => {
 
 export const apiUpdateTransaction = async (id: string, updates: Partial<Transaction>) => {
   try {
-    const response = await fetch(`/api/transactions/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
-    });
+    const { data, error } = await supabase
+      .from('transactions')
+      .update(updates)
+      .eq('id', id)
+      .select();
+
+    if (error) throw error;
     
-    if (!response.ok) {
-      throw new Error('Error updating transaction');
-    }
-    
-    return await response.json();
+    return data?.[0];
   } catch (error) {
-    console.error('Error en apiUpdateTransaction:', error);
+    console.error('Error updating transaction:', error);
     throw error;
   }
 };
