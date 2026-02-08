@@ -16,7 +16,8 @@ import {
   Calendar,
   MapPin,
   Building2,
-  CheckCircle2
+  CheckCircle2,
+  Bell
 } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { TransactionList } from './components/TransactionList';
@@ -29,6 +30,7 @@ import MapaLotes from './components/MapaLotes';
 import { GestionObrasView } from './components/GestionObrasView';
 import { Obra, EtapaObra } from './obra-tipos';
 import { Lote } from './types';
+import PanelRecordatorios from './components/PanelRecordatorios';
 import { 
   fetchAllData,
   apiCreateTransaction,
@@ -95,7 +97,7 @@ const App = () => {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   // --- App State ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'notes' | 'users' | 'documents' | 'logs' | 'clientes' | 'egresos-futuros' | 'lotes' | 'obras'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'notes' | 'users' | 'documents' | 'logs' | 'clientes' | 'egresos-futuros' | 'lotes' | 'obras' | 'recordatorios'>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -963,6 +965,7 @@ const handleDeleteObra = async (id: string) => {
           <SidebarItem icon={<FileText size={20}/>} label="Documentos" active={activeTab === 'documents'} onClick={() => setActiveTab('documents')} />
           <SidebarItem icon={<StickyNote size={20}/>} label="Notas & Temas" active={activeTab === 'notes'} onClick={() => setActiveTab('notes')} />
           <SidebarItem icon={<Activity size={20}/>} label="Bitácora" active={activeTab === 'logs'} onClick={() => setActiveTab('logs')} />
+          <SidebarItem icon={<Bell size={20}/>} label="Recordatorios" active={activeTab === 'recordatorios'} onClick={() => setActiveTab('recordatorios')} />
           {currentUser.role === 'admin' && (
              <SidebarItem icon={<UsersIcon size={20}/>} label="Usuarios" active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
           )}
@@ -1045,6 +1048,7 @@ const handleDeleteObra = async (id: string) => {
               {activeTab === 'documents' && 'Gestión Documental'}
               {activeTab === 'logs' && 'Registro de Actividad'}
               {activeTab === 'users' && 'Usuarios del Sistema'}
+	      {activeTab === 'recordatorios' && 'Sistema de Recordatorios'}
             </h2>
             <p className="text-slate-500 text-sm mt-1">
               Hola, {currentUser.name} | <span className="capitalize">{currentUser.role}</span>
@@ -1164,6 +1168,13 @@ const handleDeleteObra = async (id: string) => {
               currentUser={currentUser}
             />
           )}
+
+	  {activeTab === 'recordatorios' && (
+  <PanelRecordatorios 
+    clientes={data.clientesActuales}
+    pagos={data.pagosClientes}
+  />
+)}
 
           {activeTab === 'documents' && (
             <DocumentsView 
