@@ -102,7 +102,7 @@ export const PanelRecordatorios: React.FC<PanelRecordatoriosProps> = ({
     }
   };
 
-  if (loading || !config) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center p-12">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -254,6 +254,15 @@ export const PanelRecordatorios: React.FC<PanelRecordatoriosProps> = ({
             Configuración General
           </h3>
 
+          {!config && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-3 text-amber-800 mb-6">
+              <AlertCircle size={20} />
+              <p className="text-sm">
+                No se pudo cargar la configuración desde la base de datos. Se están usando valores por defecto.
+              </p>
+            </div>
+          )}
+
           {/* Días antes */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -264,13 +273,15 @@ export const PanelRecordatorios: React.FC<PanelRecordatoriosProps> = ({
                 <button
                   key={dia}
                   onClick={() => {
-                    const dias = config.diasAntes.includes(dia)
-                      ? config.diasAntes.filter(d => d !== dia)
-                      : [...config.diasAntes, dia].sort((a, b) => b - a);
+                    if (!config) return;
+                    const diasAntes = config.diasAntes || [];
+                    const dias = diasAntes.includes(dia)
+                      ? diasAntes.filter(d => d !== dia)
+                      : [...diasAntes, dia].sort((a, b) => b - a);
                     handleActualizarConfig({ diasAntes: dias });
                   }}
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    config.diasAntes.includes(dia)
+                    config?.diasAntes?.includes(dia)
                       ? 'bg-blue-600 text-white'
                       : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
@@ -280,7 +291,7 @@ export const PanelRecordatorios: React.FC<PanelRecordatoriosProps> = ({
               ))}
             </div>
             <p className="text-xs text-slate-500 mt-2">
-              Seleccionados: {config.diasAntes.sort((a, b) => b - a).join(', ')} días antes
+              Seleccionados: {config?.diasAntes?.sort((a, b) => b - a).join(', ') || 'Ninguno'} días antes
             </p>
           </div>
 
@@ -294,21 +305,21 @@ export const PanelRecordatorios: React.FC<PanelRecordatoriosProps> = ({
                 icon={<Mail size={20} />}
                 label="Email"
                 description="Enviar recordatorios por correo electrónico"
-                checked={config.habilitarEmail}
+                checked={config?.habilitarEmail || false}
                 onChange={(checked) => handleActualizarConfig({ habilitarEmail: checked })}
               />
               <ToggleOption
                 icon={<MessageSquare size={20} />}
                 label="WhatsApp"
                 description="Enviar recordatorios por WhatsApp"
-                checked={config.habilitarWhatsApp}
+                checked={config?.habilitarWhatsApp || false}
                 onChange={(checked) => handleActualizarConfig({ habilitarWhatsApp: checked })}
               />
               <ToggleOption
                 icon={<Smartphone size={20} />}
                 label="SMS"
                 description="Enviar recordatorios por mensaje de texto"
-                checked={config.habilitarSMS}
+                checked={config?.habilitarSMS || false}
                 onChange={(checked) => handleActualizarConfig({ habilitarSMS: checked })}
               />
             </div>
@@ -323,13 +334,13 @@ export const PanelRecordatorios: React.FC<PanelRecordatoriosProps> = ({
               <ToggleOption
                 label="Felicitar por pagos a tiempo"
                 description="Enviar mensaje de agradecimiento cuando cliente paga a tiempo"
-                checked={config.felicitarPagoATiempo}
+                checked={config?.felicitarPagoATiempo || false}
                 onChange={(checked) => handleActualizarConfig({ felicitarPagoATiempo: checked })}
               />
               <ToggleOption
                 label="Escalar mora automáticamente"
                 description="Aumentar frecuencia de recordatorios en caso de mora"
-                checked={config.escalarMora}
+                checked={config?.escalarMora || false}
                 onChange={(checked) => handleActualizarConfig({ escalarMora: checked })}
               />
             </div>
@@ -342,7 +353,7 @@ export const PanelRecordatorios: React.FC<PanelRecordatoriosProps> = ({
             </label>
             <input
               type="time"
-              value={config.horaEnvio}
+              value={config?.horaEnvio || '09:00'}
               onChange={(e) => handleActualizarConfig({ horaEnvio: e.target.value })}
               className="px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
             />
