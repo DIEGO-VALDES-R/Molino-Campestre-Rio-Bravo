@@ -64,15 +64,31 @@ export const PanelRecordatorios: React.FC<PanelRecordatoriosProps> = ({
     }
   };
 
+  // ✅ CORRECCIÓN: Función mejorada para que los botones no se bloqueen y respondan al instante
   const handleActualizarConfig = async (updates: Partial<ConfiguracionRecordatorios>) => {
-    if (!config) return;
+    // Si no hay config (porque falló la carga de Supabase), usamos los valores por defecto
+    const baseConfig = config || {
+      diasAntes: [7, 3, 1],
+      habilitarEmail: true,
+      habilitarWhatsApp: true,
+      habilitarSMS: false,
+      horaEnvio: '09:00',
+      felicitarPagoATiempo: true,
+      escalarMora: true
+    };
+
+    const nuevaConfig = { ...baseConfig, ...updates };
+    
+    // Actualización optimista del estado para que los botones respondan instantáneamente
+    setConfig(nuevaConfig);
     
     const success = await actualizarConfiguracionRecordatorios(updates);
     if (success) {
-      setConfig({ ...config, ...updates });
-      alert('✅ Configuración actualizada');
+      console.log('✅ Configuración guardada en base de datos');
     } else {
-      alert('❌ Error al actualizar configuración');
+      // Si falla, mostramos error y recargamos para sincronizar con el estado real
+      alert('❌ Error al guardar en la base de datos. Verifica la conexión con Supabase y que las tablas existan.');
+      cargarDatos();
     }
   };
 
@@ -273,8 +289,7 @@ export const PanelRecordatorios: React.FC<PanelRecordatoriosProps> = ({
                 <button
                   key={dia}
                   onClick={() => {
-                    if (!config) return;
-                    const diasAntes = config.diasAntes || [];
+                    const diasAntes = config?.diasAntes || [7, 3, 1];
                     const dias = diasAntes.includes(dia)
                       ? diasAntes.filter(d => d !== dia)
                       : [...diasAntes, dia].sort((a, b) => b - a);
@@ -472,7 +487,7 @@ const RecordatorioItem: React.FC<{ recordatorio: Recordatorio }> = ({ recordator
             </span>
           </div>
           <p className="text-sm text-slate-600 mb-2 line-clamp-2">
-            {recordatorio.mensaje.substring(0, 150)}...
+            {recordatorio.mensaje}
           </p>
           <div className="flex items-center gap-4 text-xs text-slate-500">
             <span className="flex items-center gap-1">
