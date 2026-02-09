@@ -1,6 +1,8 @@
 /**
- * 📧 SERVICIO DE RECORDATORIOS AUTOMÁTICOS
+ * 📧 SERVICIO DE RECORDATORIOS AUTOMÁTICOS - VERSION FINAL
  * Sistema inteligente de notificaciones para pagos de clientes
+ * 
+ * ✅ CORRECCIÓN FINAL: Usa config_recordatorios SIN created_at
  */
 
 import { supabase } from './supabaseClient';
@@ -24,11 +26,11 @@ export interface Recordatorio {
 }
 
 export interface ConfiguracionRecordatorios {
-  diasAntes: number[];  // Ej: [7, 3, 1] = enviar 7, 3 y 1 días antes
+  diasAntes: number[];
   habilitarEmail: boolean;
   habilitarWhatsApp: boolean;
   habilitarSMS: boolean;
-  horaEnvio: string; // Ej: "09:00"
+  horaEnvio: string;
   felicitarPagoATiempo: boolean;
   escalarMora: boolean;
 }
@@ -57,15 +59,25 @@ const CONFIG_DEFAULT: ConfiguracionRecordatorios = {
 export const getConfiguracionRecordatorios = async (): Promise<ConfiguracionRecordatorios> => {
   try {
     const { data, error } = await supabase
-      .from('configuracion_recordatorios')
+      .from('config_recordatorios')
       .select('*')
+      .eq('id', 'default')
       .single();
 
     if (error || !data) {
+      console.warn('⚠️ No se pudo cargar config desde DB, usando valores por defecto');
       return CONFIG_DEFAULT;
     }
 
-    return data;
+    return {
+      diasAntes: data.dias_antes || CONFIG_DEFAULT.diasAntes,
+      habilitarEmail: data.habilitar_email ?? CONFIG_DEFAULT.habilitarEmail,
+      habilitarWhatsApp: data.habilitar_whatsapp ?? CONFIG_DEFAULT.habilitarWhatsApp,
+      habilitarSMS: data.habilitar_sms ?? CONFIG_DEFAULT.habilitarSMS,
+      horaEnvio: data.hora_envio || CONFIG_DEFAULT.horaEnvio,
+      felicitarPagoATiempo: data.felicitar_pago_a_tiempo ?? CONFIG_DEFAULT.felicitarPagoATiempo,
+      escalarMora: data.escalar_mora ?? CONFIG_DEFAULT.escalarMora
+    };
   } catch (error) {
     console.error('Error obteniendo configuración:', error);
     return CONFIG_DEFAULT;
@@ -74,27 +86,45 @@ export const getConfiguracionRecordatorios = async (): Promise<ConfiguracionReco
 
 /**
  * Actualizar configuración de recordatorios
+ * ✅ VERSIÓN SIMPLIFICADA: Usa UPDATE directo sin DELETE+INSERT
  */
 export const actualizarConfiguracionRecordatorios = async (
   config: Partial<ConfiguracionRecordatorios>
 ): Promise<boolean> => {
   try {
+    console.log('🔄 Actualizando config_recordatorios con:', config);
+    
+    // Construir objeto de actualización (snake_case para DB)
+    const updates: any = {
+      updated_at: new Date().toISOString()
+    };
+
+    if (config.diasAntes !== undefined) updates.dias_antes = config.diasAntes;
+    if (config.habilitarEmail !== undefined) updates.habilitar_email = config.habilitarEmail;
+    if (config.habilitarWhatsApp !== undefined) updates.habilitar_whatsapp = config.habilitarWhatsApp;
+    if (config.habilitarSMS !== undefined) updates.habilitar_sms = config.habilitarSMS;
+    if (config.horaEnvio !== undefined) updates.hora_envio = config.horaEnvio;
+    if (config.felicitarPagoATiempo !== undefined) updates.felicitar_pago_a_tiempo = config.felicitarPagoATiempo;
+    if (config.escalarMora !== undefined) updates.escalar_mora = config.escalarMora;
+
+    console.log('📤 Actualizando con:', updates);
+
+    // UPDATE simple y directo
     const { error } = await supabase
-      .from('configuracion_recordatorios')
-      .upsert({
-        id: 'default',
-        ...config,
-        updated_at: new Date().toISOString()
-      });
+      .from('config_recordatorios')
+      .update(updates)
+      .eq('id', 'default');
 
     if (error) {
-      console.error('Error actualizando configuración:', error);
+      console.error('❌ Error al actualizar:', error);
       return false;
     }
 
+    console.log('✅ Configuración actualizada correctamente');
     return true;
+
   } catch (error) {
-    console.error('Error inesperado:', error);
+    console.error('❌ Error inesperado:', error);
     return false;
   }
 };
@@ -106,20 +136,18 @@ export const calcularProximoPago = (
   cliente: ClienteActual,
   pagos: PagoCliente[]
 ): Date | null => {
-  // Obtener último pago
   const pagosOrdenados = pagos
     .filter(p => p.clienteId === cliente.id)
     .sort((a, b) => new Date(b.fechaPago).getTime() - new Date(a.fechaPago).getTime());
 
   if (pagosOrdenados.length === 0) {
-    // Si no hay pagos, la próxima fecha es 30 días después del depósito inicial
     const fechaInicio = new Date(cliente.createdAt);
     fechaInicio.setDate(fechaInicio.getDate() + 30);
     return fechaInicio;
   }
 
   const ultimoPago = new Date(pagosOrdenados[0].fechaPago);
-  ultimoPago.setDate(ultimoPago.getDate() + 30); // Asumiendo pagos mensuales
+  ultimoPago.setDate(ultimoPago.getDate() + 30);
   return ultimoPago;
 };
 
@@ -189,7 +217,6 @@ export const generarRecordatoriosPendientes = async (
           (hoy.getTime() - new Date(ultimoPago.fechaPago).getTime()) / (1000 * 60 * 60 * 24)
         );
 
-        // Enviar felicitación 1 día después del pago
         if (diasDesdePago === 1) {
           recordatorios.push({
             id: crypto.randomUUID(),
@@ -230,7 +257,6 @@ export const enviarRecordatorios = async (
     if (!cliente) continue;
 
     try {
-      // Enviar por email
       if (recordatorio.medios.includes('email') && cliente.email) {
         const resultadoEmail = await enviarEmail({
           destinatario: cliente.email,
@@ -243,7 +269,6 @@ export const enviarRecordatorios = async (
         }
       }
 
-      // Enviar por WhatsApp
       if (recordatorio.medios.includes('whatsapp') && cliente.telefono) {
         const resultadoWhatsApp = await enviarWhatsApp({
           numero: cliente.telefono,
@@ -255,7 +280,6 @@ export const enviarRecordatorios = async (
         }
       }
 
-      // Marcar como enviado
       recordatorio.enviado = true;
       await guardarRecordatorio(recordatorio);
       enviados++;
@@ -273,7 +297,7 @@ export const enviarRecordatorios = async (
 /**
  * Guardar recordatorio en base de datos
  */
-const guardarRecordatorio = async (recordatorio: Recordatorio): Promise<boolean> => {
+export const guardarRecordatorio = async (recordatorio: Recordatorio): Promise<boolean> => {
   try {
     const { error } = await supabase
       .from('recordatorios')
@@ -339,6 +363,57 @@ export const obtenerHistorialRecordatorios = async (
   } catch (error) {
     console.error('Error inesperado:', error);
     return [];
+  }
+};
+
+/**
+ * Ejecutar sistema de recordatorios
+ */
+export const ejecutarSistemaRecordatorios = async (
+  clientes: ClienteActual[],
+  pagos: PagoCliente[]
+): Promise<{
+  success: boolean;
+  recordatoriosGenerados: number;
+  recordatoriosEnviados: number;
+  errores: string[];
+}> => {
+  try {
+    console.log('🔔 Iniciando sistema de recordatorios...');
+
+    const config = await getConfiguracionRecordatorios();
+    const recordatorios = await generarRecordatoriosPendientes(clientes, pagos, config);
+
+    console.log(`📋 ${recordatorios.length} recordatorios generados`);
+
+    if (recordatorios.length === 0) {
+      return {
+        success: true,
+        recordatoriosGenerados: 0,
+        recordatoriosEnviados: 0,
+        errores: []
+      };
+    }
+
+    const { enviados, fallidos, errores } = await enviarRecordatorios(recordatorios, clientes);
+
+    console.log(`✅ ${enviados} enviados, ❌ ${fallidos} fallidos`);
+
+    return {
+      success: true,
+      recordatoriosGenerados: recordatorios.length,
+      recordatoriosEnviados: enviados,
+      errores
+    };
+
+  } catch (error) {
+    console.error('❌ Error en sistema de recordatorios:', error);
+    return {
+      success: false,
+      recordatoriosGenerados: 0,
+      recordatoriosEnviados: 0,
+      errores: [(error as Error).message]
+    };
   }
 };
 
@@ -478,7 +553,6 @@ const generarHTMLRecordatorio = (
       <td align="center">
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
           
-          <!-- Header -->
           <tr>
             <td style="background-color: ${color}; padding: 30px; text-align: center;">
               <h1 style="margin: 0; color: white; font-size: 24px;">
@@ -487,7 +561,6 @@ const generarHTMLRecordatorio = (
             </td>
           </tr>
 
-          <!-- Content -->
           <tr>
             <td style="padding: 30px;">
               <div style="white-space: pre-wrap; line-height: 1.6; color: #374151;">
@@ -496,7 +569,6 @@ const generarHTMLRecordatorio = (
             </td>
           </tr>
 
-          <!-- Footer -->
           <tr>
             <td style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
               <p style="margin: 0; color: #6b7280; font-size: 12px;">
@@ -513,55 +585,4 @@ const generarHTMLRecordatorio = (
 </body>
 </html>
   `.trim();
-};
-
-/**
- * Ejecutar sistema de recordatorios (función principal para cron job)
- */
-export const ejecutarSistemaRecordatorios = async (
-  clientes: ClienteActual[],
-  pagos: PagoCliente[]
-): Promise<{
-  success: boolean;
-  recordatoriosGenerados: number;
-  recordatoriosEnviados: number;
-  errores: string[];
-}> => {
-  try {
-    console.log('🔔 Iniciando sistema de recordatorios...');
-
-    const config = await getConfiguracionRecordatorios();
-    const recordatorios = await generarRecordatoriosPendientes(clientes, pagos, config);
-
-    console.log(`📋 ${recordatorios.length} recordatorios generados`);
-
-    if (recordatorios.length === 0) {
-      return {
-        success: true,
-        recordatoriosGenerados: 0,
-        recordatoriosEnviados: 0,
-        errores: []
-      };
-    }
-
-    const { enviados, fallidos, errores } = await enviarRecordatorios(recordatorios, clientes);
-
-    console.log(`✅ ${enviados} enviados, ❌ ${fallidos} fallidos`);
-
-    return {
-      success: true,
-      recordatoriosGenerados: recordatorios.length,
-      recordatoriosEnviados: enviados,
-      errores
-    };
-
-  } catch (error) {
-    console.error('❌ Error en sistema de recordatorios:', error);
-    return {
-      success: false,
-      recordatoriosGenerados: 0,
-      recordatoriosEnviados: 0,
-      errores: [(error as Error).message]
-    };
-  }
 };
