@@ -23,3 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Archivos de seguridad - NUNCA subir
+*.jks
+*.keystore
+gradle.properties
+local.properties
+key.properties
