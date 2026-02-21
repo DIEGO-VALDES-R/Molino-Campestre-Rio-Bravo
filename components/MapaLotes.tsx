@@ -538,9 +538,10 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
 
       // ── 2. GENERAR PDF ─────────────────────────────────────────────────────
       console.log('📄 Generando PDF de comprobante...');
-      const comprobanteBlob = await generarComprobanteReservaVenta(comprobanteData);
-      const pdfBase64 = await blobToBase64(comprobanteBlob);
-      const nombreArchivoComprobante = generarNombreArchivo('comprobante', selectedLote.numeroLote);
+      // YA EXISTE - así está ahora:
+const comprobanteBlob = await generarComprobanteReservaVenta(comprobanteData);
+const pdfBase64 = await blobToBase64(comprobanteBlob);
+const nombreArchivoComprobante = generarNombreArchivo('comprobante', selectedLote.numeroLote);
       console.log('✅ PDF generado exitosamente');
 
       // ── 3. GUARDAR DOCUMENTO COMPRAVENTA (si se adjuntó) ───────────────────
@@ -561,13 +562,14 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
           numeroLote: selectedLote.numeroLote,
         },
         {
-          tipo: reservaVentaForm.accion,
-          numeroOperacion,
-          deposito: reservaVentaForm.depositoInicial,
-          valorLote: selectedLote.precio,
-          pdfBase64,
-          nombreArchivo: nombreArchivoComprobante,
-        },
+  tipo: reservaVentaForm.accion,
+  numeroOperacion,
+  deposito: reservaVentaForm.depositoInicial,
+  valorLote: selectedLote.precio,
+  pdfBase64,
+  pdfBlob: comprobanteBlob,   // ← solo agregar esta línea
+  nombreArchivo: nombreArchivoComprobante,
+},
         {
           enviarEmail: !!reservaVentaForm.email,
           enviarWhatsApp: !!reservaVentaForm.telefono,

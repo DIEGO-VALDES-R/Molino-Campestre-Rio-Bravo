@@ -1,10 +1,11 @@
 /**
- * ✅ SERVICIO DE ENVÍO POR EMAIL Y WHATSAPP
- * Integración con APIs de terceros
+ * ✅ SERVICIO DE ENVÍO — Email (Resend) + WhatsApp (wa.me)
+ * Email: Supabase Edge Function → Resend API
+ * WhatsApp: Enlace wa.me (abre WhatsApp con mensaje prellenado)
  */
 
 // ============================================
-// 📧 SERVICIO DE EMAIL
+// 📧 EMAIL VIA SUPABASE EDGE FUNCTION (RESEND)
 // ============================================
 
 export interface DatosEnvioEmail {
@@ -15,114 +16,99 @@ export interface DatosEnvioEmail {
   nombreArchivo?: string;
 }
 
-/**
- * Enviar email usando Supabase Edge Function o API externa
- * Soporta SendGrid, Mailgun, Gmail API, etc.
- */
 export const enviarEmail = async (datos: DatosEnvioEmail) => {
   try {
-    // OPCIÓN 1: Usando Supabase Edge Function
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/enviar-email`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify({
           to: datos.destinatario,
           subject: datos.asunto,
           html: datos.htmlContent,
           pdfBase64: datos.pdfBase64,
-          fileName: datos.nombreArchivo
-        })
+          fileName: datos.nombreArchivo,
+        }),
       }
     );
 
+    const result = await response.json();
+
     if (!response.ok) {
-      throw new Error(`Error enviando email: ${response.statusText}`);
+      throw new Error(result.error || `Error ${response.status}`);
     }
 
     console.log(`✅ Email enviado a ${datos.destinatario}`);
-    return {
-      success: true,
-      mensaje: `Email enviado a ${datos.destinatario}`
-    };
+    return { success: true, mensaje: `Email enviado a ${datos.destinatario}` };
+
   } catch (error) {
     console.error('❌ Error enviando email:', error);
-    // Fallback: Mostrar en consola para desarrollo
-    console.log('Email content:', datos.htmlContent);
-    return {
-      success: false,
-      error: (error as Error).message
-    };
+    return { success: false, error: (error as Error).message };
   }
 };
 
 // ============================================
-// 📱 SERVICIO DE WHATSAPP
+// 📱 WHATSAPP VIA wa.me (sin API, sin backend)
+// Abre WhatsApp Web/App con mensaje y descarga del PDF
 // ============================================
 
 export interface DatosEnvioWhatsApp {
   numero: string;
   mensaje: string;
-  urlPDF?: string;
+  /** Si se pasa, se descarga el PDF y luego se abre WhatsApp */
+  pdfBlob?: Blob;
+  nombreArchivo?: string;
 }
 
 /**
- * Enviar mensaje WhatsApp usando Twilio o similar
- * Requiere Edge Function en Supabase
+ * Abre WhatsApp con el mensaje prellenado.
+ * Si se pasa pdfBlob, primero descarga el PDF automáticamente
+ * para que el usuario lo pueda adjuntar manualmente.
  */
-export const enviarWhatsApp = async (datos: DatosEnvioWhatsApp) => {
+export const enviarWhatsApp = (datos: DatosEnvioWhatsApp) => {
   try {
-    // Limpiar número telefónico
-    const telefonoLimpio = datos.numero
-      .replace(/\D/g, '')
-      .replace(/^1/, '');
+    // Limpiar número y agregar código Colombia
+    const telefonoLimpio = datos.numero.replace(/\D/g, '').replace(/^0+/, '');
+    const numeroWhatsApp = telefonoLimpio.startsWith('57')
+      ? telefonoLimpio
+      : `57${telefonoLimpio}`;
 
-    // Agregar código de país (Colombia: 57)
-    const numeroWhatsApp = `57${telefonoLimpio}`;
-
-    // OPCIÓN: Usando Supabase Edge Function
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/enviar-whatsapp`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({
-          to: numeroWhatsApp,
-          message: datos.mensaje,
-          mediaUrl: datos.urlPDF
-        })
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Error enviando WhatsApp: ${response.statusText}`);
+    // Si viene PDF, descargarlo primero
+    if (datos.pdfBlob && datos.nombreArchivo) {
+      const url = URL.createObjectURL(datos.pdfBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = datos.nombreArchivo;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     }
 
-    console.log(`✅ WhatsApp enviado a +${numeroWhatsApp}`);
-    return {
-      success: true,
-      mensaje: `Mensaje enviado a +${numeroWhatsApp}`
-    };
+    // Abrir WhatsApp con mensaje prellenado
+    const mensajeCodificado = encodeURIComponent(datos.mensaje);
+    const urlWhatsApp = `https://wa.me/${numeroWhatsApp}?text=${mensajeCodificado}`;
+
+    // Pequeño delay para que la descarga del PDF inicie primero
+    setTimeout(() => {
+      window.open(urlWhatsApp, '_blank');
+    }, datos.pdfBlob ? 800 : 0);
+
+    console.log(`✅ WhatsApp abierto para +${numeroWhatsApp}`);
+    return { success: true, mensaje: `WhatsApp abierto para +${numeroWhatsApp}` };
+
   } catch (error) {
-    console.error('❌ Error enviando WhatsApp:', error);
-    // Fallback: Mostrar en consola para desarrollo
-    console.log('WhatsApp message:', datos.mensaje);
-    return {
-      success: false,
-      error: (error as Error).message
-    };
+    console.error('❌ Error abriendo WhatsApp:', error);
+    return { success: false, error: (error as Error).message };
   }
 };
 
 // ============================================
-// 🔄 ENVÍO COMBINADO
+// 🔄 ENVÍO COMBINADO (comprobante reserva/venta)
 // ============================================
 
 export const enviarComprobanteCompleto = async (
@@ -138,6 +124,7 @@ export const enviarComprobanteCompleto = async (
     deposito: number;
     valorLote: number;
     pdfBase64: string;
+    pdfBlob?: Blob;
     nombreArchivo: string;
   },
   opciones: {
@@ -148,93 +135,81 @@ export const enviarComprobanteCompleto = async (
   const resultados = {
     email: null as any,
     whatsapp: null as any,
-    errores: [] as string[]
+    errores: [] as string[],
   };
 
-  // HTML para email
+  const tipoTexto = datos.tipo === 'reserva' ? 'reserva' : 'venta';
+  const tipoMayus = datos.tipo === 'reserva' ? 'RESERVA' : 'VENTA';
+  const depositoLabel = datos.tipo === 'reserva' ? 'Depósito de Reserva' : 'Cuota Inicial';
+
+  // ── HTML para email ──────────────────────────────────────
   const htmlEmail = `
     <html>
-      <body style="font-family: Arial, sans-serif; color: #333;">
+      <body style="font-family: Arial, sans-serif; color: #333; margin: 0; padding: 0;">
         <div style="max-width: 600px; margin: 0 auto; background-color: #f9fafb;">
-          
-          <!-- ENCABEZADO -->
-          <div style="background-color: #4f46e5; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="margin: 0; font-size: 24px;">
-              ${datos.tipo === 'reserva' ? '🟡 COMPROBANTE DE RESERVA' : '🔵 COMPROBANTE DE VENTA'}
+
+          <div style="background-color: #1e3a8a; color: white; padding: 24px 20px; text-align: center; border-radius: 8px 8px 0 0;">
+            <h1 style="margin: 0; font-size: 22px;">
+              ${datos.tipo === 'reserva' ? '🟡' : '🔵'} COMPROBANTE DE ${tipoMayus}
             </h1>
-            <p style="margin: 5px 0 0 0; font-size: 14px;">Molino Campestre Rio Bravo</p>
+            <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.9;">Molino Campestre Rio Bravo</p>
           </div>
 
-          <!-- CONTENIDO -->
-          <div style="border: 1px solid #e5e7eb; padding: 20px; border-radius: 0 0 8px 8px; background-color: white;">
-            
-            <h2 style="color: #4f46e5; font-size: 18px;">¡Hola ${cliente.nombre}!</h2>
-            
-            <p>Gracias por tu confianza. Adjuntamos tu comprobante de ${datos.tipo === 'reserva' ? 'reserva' : 'venta'}.</p>
+          <div style="border: 1px solid #e5e7eb; padding: 24px; border-radius: 0 0 8px 8px; background-color: white;">
 
-            <!-- INFORMACIÓN IMPORTANTE -->
-            <div style="background-color: #f0fdf4; border-left: 4px solid #10b981; padding: 15px; margin: 20px 0; border-radius: 4px;">
-              <h3 style="margin-top: 0; color: #10b981;">Operación #${datos.numeroOperacion}</h3>
-              <p style="margin: 5px 0;"><strong>Fecha:</strong> ${new Date().toLocaleDateString('es-CO')}</p>
-              <p style="margin: 5px 0;"><strong>Lote:</strong> #${cliente.numeroLote}</p>
-              <p style="margin: 5px 0;"><strong>Estado:</strong> Confirmado ✅</p>
+            <h2 style="color: #1e3a8a; font-size: 18px; margin-top: 0;">¡Hola ${cliente.nombre}!</h2>
+            <p style="color: #555;">Gracias por tu confianza. Adjuntamos tu comprobante de ${tipoTexto}.</p>
+
+            <div style="background-color: #f0fdf4; border-left: 4px solid #10b981; padding: 16px; margin: 20px 0; border-radius: 4px;">
+              <h3 style="margin: 0 0 10px; color: #10b981; font-size: 15px;">Operación #${datos.numeroOperacion}</h3>
+              <p style="margin: 4px 0; font-size: 14px;"><strong>Fecha:</strong> ${new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+              <p style="margin: 4px 0; font-size: 14px;"><strong>Lote:</strong> #${cliente.numeroLote}</p>
+              <p style="margin: 4px 0; font-size: 14px;"><strong>Estado:</strong> Confirmado ✅</p>
             </div>
 
-            <!-- DETALLE FINANCIERO -->
-            <div style="background-color: #eff6ff; padding: 15px; margin: 20px 0; border-radius: 4px; border-left: 4px solid #3b82f6;">
-              <h3 style="margin-top: 0; color: #3b82f6;">Detalle del Pago</h3>
-              <p style="margin: 5px 0;"><strong>Valor Total:</strong> \$${datos.valorLote.toLocaleString()}</p>
-              <p style="margin: 5px 0;"><strong>${datos.tipo === 'reserva' ? 'Depósito de Reserva' : 'Cuota Inicial'}:</strong> \$${datos.deposito.toLocaleString()}</p>
-              <p style="margin: 5px 0;"><strong>Saldo Restante:</strong> \$${(datos.valorLote - datos.deposito).toLocaleString()}</p>
+            <div style="background-color: #eff6ff; padding: 16px; margin: 20px 0; border-radius: 4px; border-left: 4px solid #3b82f6;">
+              <h3 style="margin: 0 0 10px; color: #3b82f6; font-size: 15px;">Detalle del Pago</h3>
+              <p style="margin: 4px 0; font-size: 14px;"><strong>Valor Total del Lote:</strong> $${datos.valorLote.toLocaleString('es-CO')}</p>
+              <p style="margin: 4px 0; font-size: 14px;"><strong>${depositoLabel}:</strong> $${datos.deposito.toLocaleString('es-CO')}</p>
+              <p style="margin: 4px 0; font-size: 14px; color: #f97316;"><strong>Saldo Restante:</strong> $${(datos.valorLote - datos.deposito).toLocaleString('es-CO')}</p>
             </div>
 
-            <!-- PRÓXIMOS PASOS -->
-            <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
-              <h3 style="margin-top: 0; color: #f59e0b;">Próximos Pasos</h3>
-              <ol style="margin: 10px 0; padding-left: 20px;">
-                <li>Revisa tu comprobante adjunto</li>
-                <li>Realiza el pago según el plan establecido</li>
-                <li>Guarda este email para referencia futura</li>
+            <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 4px;">
+              <h3 style="margin: 0 0 8px; color: #d97706; font-size: 15px;">Próximos Pasos</h3>
+              <ol style="margin: 0; padding-left: 18px; font-size: 14px;">
+                <li style="margin-bottom: 4px;">Descarga y guarda el PDF adjunto</li>
+                <li style="margin-bottom: 4px;">Realiza los pagos según el cronograma acordado</li>
+                <li>Contáctanos si tienes alguna pregunta</li>
               </ol>
             </div>
 
-            <!-- CONTACTO -->
-            <div style="background-color: #f3f4f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
-              <p style="margin: 0;">
-                <strong>¿Preguntas?</strong> No dudes en contactarnos:<br>
-                📞 +57 123 4567890<br>
-                📧 info@molino.com
-              </p>
+            <div style="background-color: #f3f4f6; padding: 14px; margin: 20px 0; border-radius: 4px; font-size: 14px;">
+              <strong>¿Preguntas?</strong><br>
+              📞 3124915127 - 3125123639<br>
+              📍 Molino Campestre Rio Bravo
             </div>
 
-            <!-- FIRMA -->
-            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; color: #666; font-size: 12px;">
-                Saludos cordiales,<br>
-                <strong>Equipo de Molino Campestre Rio Bravo</strong>
-              </p>
+            <div style="margin-top: 28px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #666;">
+              Saludos cordiales,<br>
+              <strong>Equipo de Molino Campestre Rio Bravo</strong>
             </div>
-
           </div>
 
-          <!-- FOOTER -->
-          <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
-            <p>Este es un email automático. No respondas directamente.</p>
-            <p>© 2025 Molino Campestre Rio Bravo. Todos los derechos reservados.</p>
+          <div style="text-align: center; margin-top: 16px; color: #999; font-size: 11px; padding-bottom: 20px;">
+            <p style="margin: 2px 0;">Email automático — No respondas directamente.</p>
+            <p style="margin: 2px 0;">© ${new Date().getFullYear()} Molino Campestre Rio Bravo</p>
           </div>
-
         </div>
       </body>
     </html>
   `;
 
-  // Mensaje para WhatsApp
-  const mensajeWhatsApp = `
-🌾 *MOLINO CAMPESTRE RIO BRAVO* 🌾
+  // ── Mensaje WhatsApp ─────────────────────────────────────
+  const mensajeWhatsApp = `🌾 *MOLINO CAMPESTRE RIO BRAVO* 🌾
 
 ¡Hola *${cliente.nombre}*! 👋
 
-Tu ${datos.tipo === 'reserva' ? 'reserva' : 'venta'} ha sido procesada exitosamente ✅
+Tu ${tipoTexto} ha sido procesada exitosamente ✅
 
 📋 *Detalles de tu Operación:*
 • Operación: #${datos.numeroOperacion}
@@ -244,57 +219,45 @@ Tu ${datos.tipo === 'reserva' ? 'reserva' : 'venta'} ha sido procesada exitosame
 • Estado: Confirmado ✅
 
 💰 *Información Financiera:*
-• Valor Total: $${datos.valorLote.toLocaleString()}
-• ${datos.tipo === 'reserva' ? 'Depósito' : 'Cuota'} Inicial: $${datos.deposito.toLocaleString()}
-• Saldo Restante: $${(datos.valorLote - datos.deposito).toLocaleString()}
+• Valor Total: $${datos.valorLote.toLocaleString('es-CO')}
+• ${depositoLabel}: $${datos.deposito.toLocaleString('es-CO')}
+• Saldo Restante: $${(datos.valorLote - datos.deposito).toLocaleString('es-CO')}
 
-📥 *Descarga tu comprobante:*
-Revisa tu email para descargar el PDF
-
-💡 *Pasos Siguientes:*
-1. Descarga y guarda tu comprobante
-2. Realiza el pago según el cronograma
-3. Contacta con nosotros si tienes preguntas
+📎 *Adjuntamos tu comprobante PDF.*
+Por favor guárdalo para tus registros.
 
 📞 *¿Preguntas?*
-Estamos aquí para ayudarte
-Llama: +57 123 4567890
-Email: info@molino.com
+Llámanos: 3124915127 - 3125123639
 
-¡Gracias por tu confianza! 🙏
-  `.trim();
+¡Gracias por tu confianza! 🙏`.trim();
 
-  // Enviar Email
+  // ── Enviar Email ─────────────────────────────────────────
   if (opciones.enviarEmail && cliente.email) {
     try {
       resultados.email = await enviarEmail({
         destinatario: cliente.email,
-        asunto:
-          datos.tipo === 'reserva'
-            ? `Comprobante de Reserva - Lote #${cliente.numeroLote}`
-            : `Comprobante de Venta - Lote #${cliente.numeroLote}`,
+        asunto: `Comprobante de ${tipoMayus} — Lote #${cliente.numeroLote} | Molino Campestre`,
         htmlContent: htmlEmail,
         pdfBase64: datos.pdfBase64,
-        nombreArchivo: datos.nombreArchivo
+        nombreArchivo: datos.nombreArchivo,
       });
     } catch (error) {
-      resultados.errores.push(
-        `Email: ${(error as Error).message}`
-      );
+      resultados.errores.push(`Email: ${(error as Error).message}`);
     }
   }
 
-  // Enviar WhatsApp
+  // ── Enviar WhatsApp ──────────────────────────────────────
+  // Descarga el PDF y abre WhatsApp con el mensaje
   if (opciones.enviarWhatsApp && cliente.telefono) {
     try {
-      resultados.whatsapp = await enviarWhatsApp({
+      resultados.whatsapp = enviarWhatsApp({
         numero: cliente.telefono,
-        mensaje: mensajeWhatsApp
+        mensaje: mensajeWhatsApp,
+        pdfBlob: datos.pdfBlob,
+        nombreArchivo: datos.nombreArchivo,
       });
     } catch (error) {
-      resultados.errores.push(
-        `WhatsApp: ${(error as Error).message}`
-      );
+      resultados.errores.push(`WhatsApp: ${(error as Error).message}`);
     }
   }
 
@@ -302,7 +265,7 @@ Email: info@molino.com
 };
 
 // ============================================
-// 📋 ENVÍO DE RECIBOS DE ABONO
+// 📋 RECIBO DE ABONO
 // ============================================
 
 export const enviarReciboAbono = async (
@@ -319,57 +282,78 @@ export const enviarReciboAbono = async (
     saldoActual: number;
   },
   pdfBase64: string,
-  nombreArchivo: string
+  nombreArchivo: string,
+  pdfBlob?: Blob
 ) => {
   const htmlEmail = `
     <html>
-      <body style="font-family: Arial, sans-serif;">
+      <body style="font-family: Arial, sans-serif; color: #333; margin: 0; padding: 0;">
         <div style="max-width: 600px; margin: 0 auto;">
-          
-          <!-- ENCABEZADO -->
-          <div style="background-color: #4f46e5; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="margin: 0; font-size: 20px;">📄 RECIBO DE ABONO</h1>
-            <p style="margin: 5px 0 0 0;">Molino Campestre Rio Bravo</p>
+
+          <div style="background-color: #10b981; color: white; padding: 24px 20px; text-align: center; border-radius: 8px 8px 0 0;">
+            <h1 style="margin: 0; font-size: 22px;">📄 RECIBO DE ABONO</h1>
+            <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.9;">Molino Campestre Rio Bravo</p>
           </div>
 
-          <!-- CONTENIDO -->
-          <div style="border: 1px solid #e5e7eb; padding: 20px; border-radius: 0 0 8px 8px;">
-            <h2 style="color: #4f46e5;">Estimado ${cliente.nombre},</h2>
-            
-            <p>Confirmamos la recepción de tu abono por:</p>
-            <h3 style="color: #10b981; font-size: 24px;">$${abono.monto.toLocaleString()}</h3>
-            
-            <p><strong>Lote:</strong> #${cliente.numeroLote}</p>
-            <p><strong>Fecha del Abono:</strong> ${new Date(abono.fecha).toLocaleDateString('es-CO')}</p>
-            
-            <div style="background-color: #f0fdf4; padding: 15px; margin: 20px 0; border-radius: 6px; border-left: 4px solid #10b981;">
-              <p style="margin: 5px 0;"><strong>Saldo Anterior:</strong> $${abono.saldoAnterior.toLocaleString()}</p>
-              <p style="margin: 5px 0;"><strong>Abono Realizado:</strong> -$${abono.monto.toLocaleString()}</p>
-              <p style="margin: 5px 0; font-size: 16px; color: #10b981;"><strong>Saldo Actual:</strong> $${abono.saldoActual.toLocaleString()}</p>
+          <div style="border: 1px solid #e5e7eb; padding: 24px; border-radius: 0 0 8px 8px; background: white;">
+            <h2 style="color: #1e3a8a; margin-top: 0;">Estimado/a ${cliente.nombre},</h2>
+            <p>Confirmamos la recepción de tu abono:</p>
+
+            <h3 style="color: #10b981; font-size: 28px; margin: 8px 0;">$${abono.monto.toLocaleString('es-CO')}</h3>
+
+            <p style="font-size: 14px;"><strong>Lote:</strong> #${cliente.numeroLote}</p>
+            <p style="font-size: 14px;"><strong>Fecha:</strong> ${new Date(abono.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+
+            <div style="background-color: #f0fdf4; padding: 16px; margin: 20px 0; border-radius: 6px; border-left: 4px solid #10b981; font-size: 14px;">
+              <p style="margin: 4px 0;"><strong>Saldo Anterior:</strong> $${abono.saldoAnterior.toLocaleString('es-CO')}</p>
+              <p style="margin: 4px 0; color: #ef4444;"><strong>Abono Realizado:</strong> -$${abono.monto.toLocaleString('es-CO')}</p>
+              <p style="margin: 4px 0; font-size: 16px; color: #10b981;"><strong>Saldo Actual:</strong> $${abono.saldoActual.toLocaleString('es-CO')}</p>
             </div>
-            
-            <p>
-              <a href="mailto:info@molino.com?subject=Consulta%20sobre%20recibo" style="background-color: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                📞 Contactarnos
-              </a>
-            </p>
-            
-            <p style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-              ¡Gracias por tu pago!<br>
-              <strong>Equipo de Molino Campestre</strong>
-            </p>
-          </div>
 
+            <div style="margin-top: 28px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #666;">
+              ¡Gracias por tu pago!<br>
+              <strong>Equipo de Molino Campestre Rio Bravo</strong><br>
+              📞 3124915127 - 3125123639
+            </div>
+          </div>
         </div>
       </body>
     </html>
   `;
 
-  return await enviarEmail({
+  const resultEmail = await enviarEmail({
     destinatario: cliente.email,
-    asunto: `Recibo de Abono - Lote #${cliente.numeroLote}`,
+    asunto: `Recibo de Abono — Lote #${cliente.numeroLote} | Molino Campestre`,
     htmlContent: htmlEmail,
     pdfBase64,
-    nombreArchivo
+    nombreArchivo,
   });
+
+  // También abrir WhatsApp si hay teléfono
+  if (cliente.telefono) {
+    const mensajeWA = `🌾 *MOLINO CAMPESTRE RIO BRAVO* 🌾
+
+¡Hola *${cliente.nombre}*! 
+
+Confirmamos tu abono de *$${abono.monto.toLocaleString('es-CO')}* para el lote #${cliente.numeroLote} ✅
+
+💰 *Estado de tu cuenta:*
+• Saldo anterior: $${abono.saldoAnterior.toLocaleString('es-CO')}
+• Abono: -$${abono.monto.toLocaleString('es-CO')}
+• Saldo actual: $${abono.saldoActual.toLocaleString('es-CO')}
+
+📎 Recibo adjunto enviado a tu email.
+📞 3124915127 - 3125123639
+
+¡Gracias! 🙏`.trim();
+
+    enviarWhatsApp({
+      numero: cliente.telefono,
+      mensaje: mensajeWA,
+      pdfBlob,
+      nombreArchivo,
+    });
+  }
+
+  return resultEmail;
 };

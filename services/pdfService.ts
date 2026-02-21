@@ -457,6 +457,12 @@ export const generarComprobanteReservaVenta = async (
       }
 
       y += 10;
+
+      // ← NUEVA VERIFICACIÓN DE PÁGINA
+      if (y > 250) {
+        doc.addPage();
+        y = 20;
+      }
     });
 
     // Total del cronograma
