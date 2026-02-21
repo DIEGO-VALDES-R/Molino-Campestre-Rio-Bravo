@@ -447,21 +447,24 @@ const editNote = async (id: string, updates: Partial<Note>) => {
   };
 
   // --- Handlers para Clientes ---
-  const handleAddClienteInteresado = async (cliente: Omit<ClienteInteresado, 'id' | 'createdAt'>) => {
-    const nuevoCliente: ClienteInteresado = {
-      ...cliente,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString()
-    };
-    setData(prev => ({ ...prev, clientesInteresados: [nuevoCliente, ...prev.clientesInteresados] }));
-    try {
-      await createClienteInteresado(nuevoCliente);
-      logAction('Agregar cliente interesado', `Cliente: ${cliente.nombre}`);
-    } catch (e) {
-      console.error(e);
-      alert('Error guardando cliente');
-    }
+  // DESPUÉS
+const handleAddClienteInteresado = async (cliente: Omit<ClienteInteresado, 'id' | 'createdAt'>) => {
+  const nuevoCliente: ClienteInteresado = {
+    ...cliente,
+    id: crypto.randomUUID(),
+    estado: cliente.estado || 'activo',
+    fechaContacto: cliente.fechaContacto || new Date().toISOString(),
+    createdAt: new Date().toISOString()
   };
+  setData(prev => ({ ...prev, clientesInteresados: [nuevoCliente, ...prev.clientesInteresados] }));
+  try {
+    await createClienteInteresado(nuevoCliente);
+    logAction('Agregar cliente interesado', `Cliente: ${cliente.nombre}`);
+  } catch (e) {
+    console.error('Error guardando cliente interesado:', e);
+    alert(`Error guardando cliente: ${(e as Error).message}`);
+  }
+};
 
   const handleConvertToClienteActual = async (
     interesadoId: string,
@@ -758,24 +761,29 @@ const handleDeleteEgresoFuturo = async (id: string) => {
     estado: 'reservado' | 'vendido'
   ) => {
     try {
-      const nuevoCliente: ClienteActual = {
-        id: crypto.randomUUID(),
-        nombre: clienteData.nombre,
-        email: clienteData.email || '',
-        telefono: clienteData.telefono || '',
-        numeroLote: numeroLote,
-        valorLote: clienteData.valorLote,
-        depositoInicial: clienteData.depositoInicial,
-        saldoRestante: clienteData.saldoRestante,
-        numeroCuotas: clienteData.numeroCuotas,
-        valorCuota: clienteData.valorCuota,
-        saldoFinal: clienteData.saldoFinal,
-        formaPagoInicial: clienteData.formaPagoInicial,
-        formaPagoCuotas: clienteData.formaPagoCuotas,
-        documentoCompraventa: clienteData.documentoCompraventa,
-        estado: clienteData.estado,
-        createdAt: new Date().toISOString()
-      };
+     // DESPUÉS
+const nuevoCliente: ClienteActual = {
+  id: crypto.randomUUID(),
+  nombre: clienteData.nombre,
+  cedula: clienteData.cedula || '',                    // ← AGREGADO
+  email: clienteData.email || '',
+  telefono: clienteData.telefono || '',
+  numeroLote: numeroLote,
+  valorLote: clienteData.valorLote,
+  depositoInicial: clienteData.depositoInicial,
+  saldoRestante: clienteData.saldoRestante,
+  numeroCuotas: clienteData.numeroCuotas,
+  valorCuota: clienteData.valorCuota,
+  saldoFinal: clienteData.saldoFinal,
+  formaPagoInicial: clienteData.formaPagoInicial,
+  formaPagoCuotas: clienteData.formaPagoCuotas,
+  documentoCompraventa: clienteData.documentoCompraventa,
+  estado: clienteData.estado,
+  tipoPlanPago: clienteData.tipoPlanPago || 'automatico',           // ← AGREGADO
+  cuotasPersonalizadas: clienteData.cuotasPersonalizadas || undefined, // ← AGREGADO
+  notasEspeciales: clienteData.notasEspeciales || '',               // ← AGREGADO
+  createdAt: new Date().toISOString()
+};
 
       await createClienteActual(nuevoCliente);
 
@@ -1125,7 +1133,22 @@ const handleDeleteObra = async (id: string) => {
               pagosClientes={data.pagosClientes}
               onAddClienteInteresado={handleAddClienteInteresado}
               onConvertToClienteActual={handleConvertToClienteActual}
-              onUpdateClienteInteresado={handleUpdateClienteInteresado}
+onAddClienteActual={async (clienteData) => {
+  const nuevoCliente: ClienteActual = {
+    ...clienteData,
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString()
+  };
+  setData(prev => ({ ...prev, clientesActuales: [nuevoCliente, ...prev.clientesActuales] }));
+  try {
+    await createClienteActual(nuevoCliente);
+    logAction('Agregar cliente actual', `${clienteData.nombre} - Lote ${clienteData.numeroLote}`);
+  } catch (e) {
+    console.error(e);
+    alert('Error guardando cliente actual');
+  }
+}}
+onUpdateClienteInteresado={handleUpdateClienteInteresado}
               onDeleteClienteInteresado={handleDeleteClienteInteresado}
               onUpdateClienteActual={handleUpdateClienteActual}
               onDeleteClienteActual={handleDeleteClienteActual}

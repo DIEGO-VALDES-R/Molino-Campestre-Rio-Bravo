@@ -1,13 +1,193 @@
 /**
- * ==================== GESTIÓN DE OBRAS ====================
- * Sistema completo de gestión de proyectos de construcción
- * Molino Campestre Rio Bravo
+ * ============================================================
+ * TYPES COMPLETOS — Molino Campestre Rio Bravo
+ * Sistema de Gestión de Ventas y Proyectos
+ * ============================================================
  */
 
-/**
- * Etapas del proyecto inmobiliario personalizadas
- */
-export type EtapaObra = 
+// ============================================================
+// USUARIO
+// ============================================================
+
+export type UserRole = 'admin' | 'vendedor' | 'contador' | 'visor';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  avatar?: string;
+  telefono?: string;
+  activo: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// ============================================================
+// CLIENTES INTERESADOS (PROSPECTOS)
+// ============================================================
+
+export type EstadoInteresado = 'activo' | 'inactivo' | 'convertido' | 'descartado';
+
+export interface ClienteInteresado {
+  id: string;
+  nombre: string;
+  email: string;
+  telefono: string;
+  direccion?: string;
+  notas?: string;
+  fechaContacto: string;
+  estado: EstadoInteresado;
+  fuenteContacto?: string;   // Ej: 'referido', 'redes sociales', 'visita directa'
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// ============================================================
+// CUOTAS PERSONALIZADAS (promesa de compraventa)
+// ============================================================
+
+export interface CuotaPersonalizada {
+  numero: number;
+  descripcion: string;       // Ej: "Primera cuota - Arras confirmatorias"
+  monto: number;
+  fechaPago: string;         // ISO date string o descripción libre
+  condicion?: string;        // Ej: "Al momento de firma de escritura pública"
+  pagada?: boolean;
+}
+
+// ============================================================
+// CLIENTES ACTUALES (CON LOTE ADQUIRIDO)
+// ============================================================
+
+export type EstadoCliente = 'activo' | 'pagado' | 'mora' | 'cancelado';
+export type TipoPlanPago = 'automatico' | 'personalizado';
+
+export interface ClienteActual {
+  id: string;
+  nombre: string;
+  email: string;
+  telefono: string;
+  cedula?: string;
+  numeroLote: string;
+  valorLote: number;
+  depositoInicial: number;
+  saldoRestante: number;
+  saldoFinal: number;
+  numeroCuotas: number;
+  valorCuota: number;
+  formaPagoInicial: string;
+  formaPagoCuotas: string;
+  documentoCompraventa?: string;
+  estado: EstadoCliente;
+  notasEspeciales?: string;
+
+  // Plan de pago personalizado (promesa de compraventa)
+  tipoPlanPago?: TipoPlanPago;
+  cuotasPersonalizadas?: CuotaPersonalizada[];
+
+  createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
+// ============================================================
+// PAGOS DE CLIENTES
+// ============================================================
+
+export type TipoPago =
+  | 'cuota'
+  | 'deposito_inicial'
+  | 'pago_extra'
+  | 'abono'
+  | 'Depósito de Reserva'
+  | 'Cuota Inicial';
+
+export type FormaPago =
+  | 'efectivo'
+  | 'transferencia'
+  | 'cheque'
+  | 'debito'
+  | 'tarjeta_credito'
+  | 'Efectivo'
+  | 'Transferencia Bancaria'
+  | 'Cheque'
+  | 'Débito Automático'
+  | 'Tarjeta de Crédito';
+
+export interface PagoCliente {
+  id: string;
+  clienteId: string;
+  fechaPago: string;
+  monto: number;
+  tipoPago: TipoPago | string;
+  formaPago: FormaPago | string;
+  documentoAdjunto?: string;
+  notas?: string;
+  registradoPor?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// ============================================================
+// LOTES
+// ============================================================
+
+export type EstadoLote = 'disponible' | 'vendido' | 'reservado' | 'bloqueado';
+
+export interface Lote {
+  id: string;
+  numeroLote: string;
+  estado: EstadoLote;
+  area?: number;           // en m²
+  precio?: number;
+  ubicacion?: string;
+  descripcion?: string;
+  bloqueadoPor?: string;   // razón del bloqueo
+  fila?: number;           // posición en mapa grid
+  columna?: number;        // posición en mapa grid
+  clienteId?: string;      // referencia al cliente si está vendido/reservado
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// DOCUMENTOS
+// ============================================================
+
+export type CategoriaDocumento =
+  | 'Recibo de Abono'
+  | 'Comprobante de Reserva'
+  | 'Comprobante de Venta'
+  | 'Documento de Compraventa'
+  | 'Contrato'
+  | 'Escritura'
+  | 'Permiso'
+  | 'Plano'
+  | 'Factura'
+  | 'Otro';
+
+export interface Documento {
+  id: string;
+  name: string;
+  type: string;             // MIME type, ej: 'application/pdf'
+  data?: string;            // base64
+  url?: string;             // URL de almacenamiento
+  uploadedBy: string;
+  category: CategoriaDocumento | string;
+  uploadedAt: string;
+  size?: number;            // bytes
+  clienteId?: string;
+  loteId?: string;
+  obraId?: string;
+  createdAt?: string;
+}
+
+// ============================================================
+// OBRAS (importado también desde obra-types)
+// ============================================================
+
+export type EtapaObra =
   | 'planificacion'
   | 'topografia'
   | 'planos'
@@ -22,19 +202,16 @@ export type EtapaObra =
   | 'escrituracion'
   | 'terminada';
 
+export type EstadoObra = 'activa' | 'pausada' | 'completada' | 'cancelada';
 
-export interface Note {
-  id: string;
-  title: string;
-  content: string;
-  category: 'tema' | 'nota' | 'recordatorio';
-  status: 'futuro' | 'tratado';
-  createdAt: string;
-}
+export type CategoriaGasto =
+  | 'materiales'
+  | 'mano_obra'
+  | 'maquinaria'
+  | 'permisos'
+  | 'servicios'
+  | 'otros';
 
-/**
- * Hito o evento importante en la obra
- */
 export interface Hito {
   id: string;
   fecha: string;
@@ -47,12 +224,9 @@ export interface Hito {
   createdAt: string;
 }
 
-/**
- * Foto de avance de obra
- */
 export interface FotoObra {
   id: string;
-  url: string; // URL o base64
+  url: string;
   descripcion: string;
   fecha: string;
   etapa: EtapaObra;
@@ -61,14 +235,11 @@ export interface FotoObra {
   createdAt: string;
 }
 
-/**
- * Gasto registrado en la obra
- */
 export interface GastoObra {
   id: string;
   fecha: string;
   concepto: string;
-  categoria: 'materiales' | 'mano_obra' | 'maquinaria' | 'permisos' | 'servicios' | 'otros';
+  categoria: CategoriaGasto;
   monto: number;
   proveedor?: string;
   factura?: string;
@@ -78,25 +249,22 @@ export interface GastoObra {
   createdAt: string;
 }
 
-/**
- * Obra o proyecto de construcción
- */
 export interface Obra {
   id: string;
   nombre: string;
   descripcion?: string;
-  etapaActual: string;
-  progreso: number; // 0-100
+  etapaActual: EtapaObra | string;
+  progreso: number;          // 0–100
   presupuesto: number;
   gastado: number;
   fechaInicio: string;
   fechaEstimadaFin?: string;
-  fotos: any[];
-  hitos: any[];
-  gastos: any[];
+  fotos: FotoObra[];
+  hitos: Hito[];
+  gastos: GastoObra[];
   ubicacion?: string;
   responsable?: string;
-  estado: 'activa' | 'pausada' | 'completada' | 'cancelada';
+  estado: EstadoObra;
   compartidoConClientes?: boolean;
   lotesAsociados?: string[];
   clientesAsociados?: string[];
@@ -105,9 +273,28 @@ export interface Obra {
   createdBy?: string;
 }
 
-/**
- * Configuración de etapas con información detallada
- */
+// ============================================================
+// NOTAS / REUNIONES
+// ============================================================
+
+export type CategoriaNota = 'tema' | 'nota' | 'recordatorio';
+export type EstadoNota = 'futuro' | 'tratado';
+
+export interface Note {
+  id: string;
+  title: string;
+  content: string;
+  category: CategoriaNota;
+  status: EstadoNota;
+  createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
+// ============================================================
+// CONFIGURACIÓN DE ETAPAS (referencia de UI)
+// ============================================================
+
 export interface EtapaConfig {
   id: EtapaObra;
   nombre: string;
@@ -119,178 +306,27 @@ export interface EtapaConfig {
   duracionEstimadaDias?: number;
 }
 
-/**
- * Reporte de avance de obra
- */
-export interface ReporteAvanceObra {
-  id: string;
-  obraId: string;
-  fecha: string;
-  etapa: EtapaObra;
-  progresoGeneral: number;
-  presupuestoEjecutado: number;
-  presupuestoRestante: number;
-  hitosCompletados: number;
-  hitosPendientes: number;
-  observaciones: string;
-  proximasActividades: string[];
-  fotosAdjuntas: string[];
-  generadoPor: string;
-  createdAt: string;
+// ============================================================
+// ESTADO GLOBAL DE LA APP (para contexto/store)
+// ============================================================
+
+export interface AppState {
+  clientesInteresados: ClienteInteresado[];
+  clientesActuales: ClienteActual[];
+  pagosClientes: PagoCliente[];
+  lotes: Lote[];
+  obras: Obra[];
+  notas: Note[];
+  documentos: Documento[];
+  currentUser: User | null;
 }
 
-/**
- * Configuración completa de todas las etapas
- */
-export const ETAPAS_OBRA: EtapaConfig[] = [
-  {
-    id: 'planificacion',
-    nombre: 'Planificación',
-    descripcion: 'Fase inicial de diseño y planificación del proyecto',
-    icon: '📋',
-    color: '#6366f1',
-    colorBg: '#eef2ff',
-    orden: 1,
-    duracionEstimadaDias: 30
-  },
-  {
-    id: 'topografia',
-    nombre: 'Topografía',
-    descripcion: 'Levantamiento topográfico del terreno',
-    icon: '🗺️',
-    color: '#8b5cf6',
-    colorBg: '#f5f3ff',
-    orden: 2,
-    duracionEstimadaDias: 15
-  },
-  {
-    id: 'planos',
-    nombre: 'Planos Iniciales',
-    descripcion: 'Elaboración de planos arquitectónicos iniciales',
-    icon: '📐',
-    color: '#a855f7',
-    colorBg: '#faf5ff',
-    orden: 3,
-    duracionEstimadaDias: 20
-  },
-  {
-    id: 'curvas_nivel',
-    nombre: 'Curvas de Nivel',
-    descripcion: 'Diseño y ajuste de curvas de nivel',
-    icon: '📊',
-    color: '#d946ef',
-    colorBg: '#fdf4ff',
-    orden: 4,
-    duracionEstimadaDias: 10
-  },
-  {
-    id: 'planos_finales',
-    nombre: 'Planos Finales',
-    descripcion: 'Aprobación y finalización de planos técnicos',
-    icon: '✅',
-    color: '#3b82f6',
-    colorBg: '#eff6ff',
-    orden: 5,
-    duracionEstimadaDias: 15
-  },
-  {
-    id: 'documentacion_planeacion',
-    nombre: 'Documentación y Planeación',
-    descripcion: 'Gestión de permisos y documentación legal',
-    icon: '📄',
-    color: '#06b6d4',
-    colorBg: '#ecfeff',
-    orden: 6,
-    duracionEstimadaDias: 45
-  },
-  {
-    id: 'remocion_piedras',
-    nombre: 'Remoción de Piedras',
-    descripcion: 'Limpieza y preparación del terreno',
-    icon: '⛏️',
-    color: '#f59e0b',
-    colorBg: '#fffbeb',
-    orden: 7,
-    duracionEstimadaDias: 20
-  },
-  {
-    id: 'construccion_vias',
-    nombre: 'Construcción de Vías',
-    descripcion: 'Pavimentación y construcción de vías de acceso',
-    icon: '🛣️',
-    color: '#f97316',
-    colorBg: '#fff7ed',
-    orden: 8,
-    duracionEstimadaDias: 60
-  },
-  {
-    id: 'entrega_lotes',
-    nombre: 'Entrega de Lotes',
-    descripcion: 'Delimitación y entrega física de lotes',
-    icon: '🏘️',
-    color: '#10b981',
-    colorBg: '#ecfdf5',
-    orden: 9,
-    duracionEstimadaDias: 30
-  },
-  {
-    id: 'sucesion_interna',
-    nombre: 'Sucesión Interna Familiar',
-    descripcion: 'Gestión de sucesión interna de propietarios',
-    icon: '👨‍👩‍👧‍👦',
-    color: '#14b8a6',
-    colorBg: '#f0fdfa',
-    orden: 10,
-    duracionEstimadaDias: 90
-  },
-  {
-    id: 'sucesion_lotes',
-    nombre: 'Sucesión por Lotes',
-    descripcion: 'Proceso de sucesión individual por lote',
-    icon: '📝',
-    color: '#22c55e',
-    colorBg: '#f0fdf4',
-    orden: 11,
-    duracionEstimadaDias: 120
-  },
-  {
-    id: 'escrituracion',
-    nombre: 'Escrituración',
-    descripcion: 'Proceso de escrituración y registro legal',
-    icon: '⚖️',
-    color: '#84cc16',
-    colorBg: '#f7fee7',
-    orden: 12,
-    duracionEstimadaDias: 60
-  },
-  {
-    id: 'terminada',
-    nombre: 'Terminada',
-    descripcion: 'Proyecto finalizado y entregado',
-    icon: '🎉',
-    color: '#22d3ee',
-    colorBg: '#cffafe',
-    orden: 13,
-    duracionEstimadaDias: 0
-  }
-];
+// ============================================================
+// UTILIDADES DE TIPO
+// ============================================================
 
-/**
- * Obtener configuración de una etapa
- */
-export const getEtapaConfig = (etapa: EtapaObra): EtapaConfig | undefined => {
-  return ETAPAS_OBRA.find(e => e.id === etapa);
-};
+/** Omite id y campos de auditoría para formularios de creación */
+export type CreateDTO<T> = Omit<T, 'id' | 'createdAt' | 'updatedAt'>;
 
-/**
- * Calcular progreso basado en etapa actual
- */
-export const calcularProgresoAutomatico = (etapaActual: EtapaObra): number => {
-  const config = getEtapaConfig(etapaActual);
-  if (!config) return 0;
-  
-  const totalEtapas = ETAPAS_OBRA.length;
-  return Math.round((config.orden / totalEtapas) * 100);
-};
-
-export * from './obra-types';
+/** Permite actualización parcial */
+export type UpdateDTO<T> = Partial<Omit<T, 'id' | 'createdAt'>>;

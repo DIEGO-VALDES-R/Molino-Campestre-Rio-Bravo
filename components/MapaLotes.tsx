@@ -508,19 +508,19 @@ export const MapaLotes: React.FC<MapaLotesProps> = ({
 
       // ── 1. CONSTRUIR DATOS DEL COMPROBANTE ────────────────────────────────
       const comprobanteData: ComprobanteData = {
-        tipo: reservaVentaForm.accion,
-        cliente: {
-          nombre: reservaVentaForm.nombre.trim(),
-          cedula: reservaVentaForm.cedula.trim() || undefined,
-          email: reservaVentaForm.email.trim() || 'no-especificado@molino.com',
-          telefono: reservaVentaForm.telefono.trim() || 'No especificado',
-        },
-        lote: {
-          numeroLote: selectedLote.numeroLote,
-          area: selectedLote.area,
-          precio: selectedLote.precio,
-          ubicacion: selectedLote.ubicacion || 'No especificada',
-        },
+  tipo: reservaVentaForm.accion === 'reservado' ? 'reserva' : 'venta',  // ← aquí
+  cliente: {
+    nombre: reservaVentaForm.nombre.trim(),
+    cedula: reservaVentaForm.cedula.trim() || undefined,
+    email: reservaVentaForm.email.trim() || 'no-especificado@molino.com',
+    telefono: reservaVentaForm.telefono.trim() || 'No especificado',
+  },
+  lote: {
+    numeroLote: selectedLote.numeroLote,
+    area: selectedLote.area,
+    precio: selectedLote.precio,
+    ubicacion: selectedLote.ubicacion || 'No especificada',
+  },
         deposito: reservaVentaForm.depositoInicial,
         tipoPlanPago,
         ...(tipoPlanPago === 'automatico'

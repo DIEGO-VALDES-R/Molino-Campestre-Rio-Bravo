@@ -87,6 +87,7 @@ export const fetchAllData = async (pageSize = 100, offset = 0) => {
         nombre: c.nombre,
         email: c.email,
         telefono: c.telefono,
+        cedula: c.cedula,
         numeroLote: c.numero_lote,
         valorLote: c.valor_lote,
         depositoInicial: c.deposito_inicial,
@@ -98,6 +99,9 @@ export const fetchAllData = async (pageSize = 100, offset = 0) => {
         formaPagoCuotas: c.forma_pago_cuotas,
         documentoCompraventa: c.documento_compraventa,
         estado: c.estado,
+        notasEspeciales: c.notas_especiales,
+        tipoPlanPago: c.tipo_plan_pago,
+        cuotasPersonalizadas: c.cuotas_personalizadas,
         createdAt: c.created_at
       })),
       pagosClientes: (pagosRes.data as any[] || []).map(p => ({
@@ -160,7 +164,6 @@ export const fetchAllData = async (pageSize = 100, offset = 0) => {
 // --- Transactions ---
 
 export const apiCreateTransaction = async (transaction: Transaction) => {
-  const { id, ...data } = transaction; 
   const { error } = await supabase.from('transactions').insert([transaction]);
   if (error) throw error;
 };
@@ -171,20 +174,13 @@ export const apiDeleteTransaction = async (id: string) => {
 };
 
 export const apiUpdateTransaction = async (id: string, updates: Partial<Transaction>) => {
-  try {
-    const { data, error } = await supabase
-      .from('transactions')
-      .update(updates)
-      .eq('id', id)
-      .select();
-
-    if (error) throw error;
-    
-    return data?.[0];
-  } catch (error) {
-    console.error('Error updating transaction:', error);
-    throw error;
-  }
+  const { data, error } = await supabase
+    .from('transactions')
+    .update(updates)
+    .eq('id', id)
+    .select();
+  if (error) throw error;
+  return data?.[0];
 };
 
 // --- Notes ---
@@ -224,21 +220,14 @@ export const apiDeleteUser = async (id: string) => {
   if (error) throw error;
 };
 
-// Agregar esta función en src/services/dataService.ts
-
 export const apiUpdateUser = async (userId: string, updates: Partial<User>) => {
-  const db = await getDB();
-  const tx = db.transaction('users', 'readwrite');
-  const store = tx.objectStore('users');
-  
-  const user = await store.get(userId);
-  if (!user) throw new Error('Usuario no encontrado');
-  
-  const updatedUser = { ...user, ...updates };
-  await store.put(updatedUser);
-  await tx.done;
-  
-  return updatedUser;
+  const { data, error } = await supabase
+    .from('users')
+    .update(updates)
+    .eq('id', userId)
+    .select();
+  if (error) throw error;
+  return data?.[0];
 };
 
 // --- Documents ---
@@ -265,14 +254,7 @@ export const apiDeleteDocument = async (id: string) => {
 // --- Logs (BITÁCORA) ---
 
 export const apiCreateLog = async (log: AuditLog) => {
-  if (!supabase) {
-    console.error("❌ Supabase no está inicializado");
-    return;
-  }
-
   try {
-    console.log("📝 Intentando guardar log en Supabase:", log);
-    
     const payload = {
       id: log.id,
       date: log.date,
@@ -281,23 +263,14 @@ export const apiCreateLog = async (log: AuditLog) => {
       action: log.action,
       details: log.details
     };
-    
-    console.log("📝 Payload enviado:", payload);
-    
     const { data, error } = await supabase
       .from('audit_logs')
       .insert([payload])
       .select();
-    
-    if (error) {
-      console.error("❌ Error de Supabase al guardar log:", error);
-      throw error;
-    }
-    
-    console.log("✅ Log guardado exitosamente en Supabase:", data);
+    if (error) throw error;
     return data;
   } catch (error) {
-    console.error("❌ Error inesperado al guardar log:", error);
+    console.error("Error al guardar log:", error);
     throw error;
   }
 };
@@ -336,17 +309,20 @@ export const createClienteInteresado = async (cliente: ClienteInteresado): Promi
   const payload = {
     id: cliente.id,
     nombre: cliente.nombre,
-    email: cliente.email,
-    telefono: cliente.telefono,
+    email: cliente.email || null,
+    telefono: cliente.telefono || null,
+    notas: cliente.notas || null,
+    estado: cliente.estado || 'activo',
     fecha_contacto: cliente.fechaContacto,
-    notas: cliente.notas,
-    estado: cliente.estado,
-    created_at: cliente.createdAt
+    created_at: cliente.createdAt,
   };
 
-  const { data, error } = await supabase.from('clientes_interesados').insert([payload]).select();
+  const { data, error } = await supabase
+    .from('clientes_interesados')
+    .insert([payload])
+    .select();
   
-  if (error) throw new Error('Failed to create cliente interesado');
+  if (error) throw new Error(`Failed to create cliente interesado: ${error.message}`);
   
   const c = (data as any[])?.[0];
   return {
@@ -377,7 +353,7 @@ export const updateClienteInteresado = async (id: string, updates: Partial<Clien
     .eq('id', id)
     .select();
 
-  if (error) throw new Error('Failed to update cliente interesado');
+  if (error) throw new Error(`Failed to update cliente interesado: ${error.message}`);
   
   const c = (data as any[])?.[0];
   return {
@@ -394,7 +370,7 @@ export const updateClienteInteresado = async (id: string, updates: Partial<Clien
 
 export const deleteClienteInteresado = async (id: string): Promise<void> => {
   const { error } = await supabase.from('clientes_interesados').delete().eq('id', id);
-  if (error) throw new Error('Failed to delete cliente interesado');
+  if (error) throw new Error(`Failed to delete cliente interesado: ${error.message}`);
 };
 
 // ==================== CONVERSIÓN A CLIENTE ACTUAL ====================
@@ -413,8 +389,9 @@ export const convertInteresadoToActual = async (
     const payload = {
       id: nuevoCliente.id,
       nombre: nuevoCliente.nombre,
-      email: nuevoCliente.email,
-      telefono: nuevoCliente.telefono,
+      email: nuevoCliente.email || null,
+      telefono: nuevoCliente.telefono || null,
+      cedula: nuevoCliente.cedula || null,
       numero_lote: nuevoCliente.numeroLote,
       valor_lote: nuevoCliente.valorLote,
       deposito_inicial: nuevoCliente.depositoInicial,
@@ -424,8 +401,11 @@ export const convertInteresadoToActual = async (
       saldo_final: nuevoCliente.saldoFinal,
       forma_pago_inicial: nuevoCliente.formaPagoInicial,
       forma_pago_cuotas: nuevoCliente.formaPagoCuotas,
-      documento_compraventa: nuevoCliente.documentoCompraventa,
+      documento_compraventa: nuevoCliente.documentoCompraventa || null,
       estado: nuevoCliente.estado,
+      notas_especiales: nuevoCliente.notasEspeciales || null,
+      tipo_plan_pago: nuevoCliente.tipoPlanPago || 'automatico',
+      cuotas_personalizadas: nuevoCliente.cuotasPersonalizadas || null,
       created_at: nuevoCliente.createdAt
     };
 
@@ -435,18 +415,18 @@ export const convertInteresadoToActual = async (
 
     if (insertError) throw insertError;
 
-    const { error: deleteError } = await supabase
-      .from('clientes_interesados')
-      .delete()
-      .eq('id', interesadoId);
+    if (interesadoId) {
+      const { error: deleteError } = await supabase
+        .from('clientes_interesados')
+        .delete()
+        .eq('id', interesadoId);
+      if (deleteError) throw deleteError;
+    }
 
-    if (deleteError) throw deleteError;
-
-    console.log('✅ Cliente convertido y eliminado de interesados');
     return nuevoCliente;
   } catch (error) {
-    console.error('❌ Error converting cliente:', error);
-    throw new Error('Failed to convert cliente');
+    console.error('Error converting cliente:', error);
+    throw new Error(`Failed to convert cliente: ${(error as Error).message}`);
   }
 };
 
@@ -469,6 +449,7 @@ export const getAllClientesActuales = async (): Promise<ClienteActual[]> => {
       nombre: c.nombre,
       email: c.email,
       telefono: c.telefono,
+      cedula: c.cedula,
       numeroLote: c.numero_lote,
       valorLote: c.valor_lote,
       depositoInicial: c.deposito_inicial,
@@ -480,6 +461,9 @@ export const getAllClientesActuales = async (): Promise<ClienteActual[]> => {
       formaPagoCuotas: c.forma_pago_cuotas,
       documentoCompraventa: c.documento_compraventa,
       estado: c.estado,
+      notasEspeciales: c.notas_especiales,
+      tipoPlanPago: c.tipo_plan_pago,
+      cuotasPersonalizadas: c.cuotas_personalizadas,
       createdAt: c.created_at
     }));
   } catch (error) {
@@ -492,8 +476,9 @@ export const createClienteActual = async (cliente: ClienteActual): Promise<Clien
   const payload = {
     id: cliente.id,
     nombre: cliente.nombre,
-    email: cliente.email,
-    telefono: cliente.telefono,
+    email: cliente.email || null,
+    telefono: cliente.telefono || null,
+    cedula: cliente.cedula || null,
     numero_lote: cliente.numeroLote,
     valor_lote: cliente.valorLote,
     deposito_inicial: cliente.depositoInicial,
@@ -503,14 +488,20 @@ export const createClienteActual = async (cliente: ClienteActual): Promise<Clien
     saldo_final: cliente.saldoFinal,
     forma_pago_inicial: cliente.formaPagoInicial,
     forma_pago_cuotas: cliente.formaPagoCuotas,
-    documento_compraventa: cliente.documentoCompraventa,
+    documento_compraventa: cliente.documentoCompraventa || null,
     estado: cliente.estado,
-    created_at: cliente.createdAt
+    notas_especiales: cliente.notasEspeciales || null,
+    tipo_plan_pago: cliente.tipoPlanPago || 'automatico',
+    cuotas_personalizadas: cliente.cuotasPersonalizadas || null,
+    created_at: cliente.createdAt,
   };
 
-  const { data, error } = await supabase.from('clientes_actuales').insert([payload]).select();
+  const { data, error } = await supabase
+    .from('clientes_actuales')
+    .insert([payload])
+    .select();
   
-  if (error) throw new Error('Failed to create cliente actual');
+  if (error) throw new Error(`Failed to create cliente actual: ${error.message}`);
   
   const c = (data as any[])?.[0];
   return {
@@ -518,6 +509,7 @@ export const createClienteActual = async (cliente: ClienteActual): Promise<Clien
     nombre: c.nombre,
     email: c.email,
     telefono: c.telefono,
+    cedula: c.cedula,
     numeroLote: c.numero_lote,
     valorLote: c.valor_lote,
     depositoInicial: c.deposito_inicial,
@@ -529,6 +521,9 @@ export const createClienteActual = async (cliente: ClienteActual): Promise<Clien
     formaPagoCuotas: c.forma_pago_cuotas,
     documentoCompraventa: c.documento_compraventa,
     estado: c.estado,
+    notasEspeciales: c.notas_especiales,
+    tipoPlanPago: c.tipo_plan_pago,
+    cuotasPersonalizadas: c.cuotas_personalizadas,
     createdAt: c.created_at
   };
 };
@@ -539,6 +534,7 @@ export const updateClienteActual = async (id: string, updates: Partial<ClienteAc
   if (updates.nombre !== undefined) payload.nombre = updates.nombre;
   if (updates.email !== undefined) payload.email = updates.email;
   if (updates.telefono !== undefined) payload.telefono = updates.telefono;
+  if (updates.cedula !== undefined) payload.cedula = updates.cedula;
   if (updates.numeroLote !== undefined) payload.numero_lote = updates.numeroLote;
   if (updates.valorLote !== undefined) payload.valor_lote = updates.valorLote;
   if (updates.depositoInicial !== undefined) payload.deposito_inicial = updates.depositoInicial;
@@ -550,6 +546,10 @@ export const updateClienteActual = async (id: string, updates: Partial<ClienteAc
   if (updates.formaPagoCuotas !== undefined) payload.forma_pago_cuotas = updates.formaPagoCuotas;
   if (updates.documentoCompraventa !== undefined) payload.documento_compraventa = updates.documentoCompraventa;
   if (updates.estado !== undefined) payload.estado = updates.estado;
+  if (updates.notasEspeciales !== undefined) payload.notas_especiales = updates.notasEspeciales;
+  if (updates.tipoPlanPago !== undefined) payload.tipo_plan_pago = updates.tipoPlanPago;
+  if (updates.cuotasPersonalizadas !== undefined) payload.cuotas_personalizadas = updates.cuotasPersonalizadas;
+  payload.updated_at = new Date().toISOString();
 
   const { data, error } = await supabase
     .from('clientes_actuales')
@@ -557,7 +557,7 @@ export const updateClienteActual = async (id: string, updates: Partial<ClienteAc
     .eq('id', id)
     .select();
 
-  if (error) throw new Error('Failed to update cliente actual');
+  if (error) throw new Error(`Failed to update cliente actual: ${error.message}`);
   
   const c = (data as any[])?.[0];
   return {
@@ -565,6 +565,7 @@ export const updateClienteActual = async (id: string, updates: Partial<ClienteAc
     nombre: c.nombre,
     email: c.email,
     telefono: c.telefono,
+    cedula: c.cedula,
     numeroLote: c.numero_lote,
     valorLote: c.valor_lote,
     depositoInicial: c.deposito_inicial,
@@ -576,6 +577,9 @@ export const updateClienteActual = async (id: string, updates: Partial<ClienteAc
     formaPagoCuotas: c.forma_pago_cuotas,
     documentoCompraventa: c.documento_compraventa,
     estado: c.estado,
+    notasEspeciales: c.notas_especiales,
+    tipoPlanPago: c.tipo_plan_pago,
+    cuotasPersonalizadas: c.cuotas_personalizadas,
     createdAt: c.created_at
   };
 };
@@ -583,7 +587,7 @@ export const updateClienteActual = async (id: string, updates: Partial<ClienteAc
 export const deleteClienteActual = async (id: string): Promise<void> => {
   await supabase.from('pagos_clientes').delete().eq('cliente_id', id);
   const { error } = await supabase.from('clientes_actuales').delete().eq('id', id);
-  if (error) throw new Error('Failed to delete cliente actual');
+  if (error) throw new Error(`Failed to delete cliente actual: ${error.message}`);
 };
 
 // ==================== PAGOS CLIENTES ====================
@@ -625,14 +629,14 @@ export const createPagoCliente = async (pago: PagoCliente): Promise<PagoCliente>
     monto: pago.monto,
     tipo_pago: pago.tipoPago,
     forma_pago: pago.formaPago,
-    documento_adjunto: pago.documentoAdjunto,
-    notas: pago.notas,
+    documento_adjunto: pago.documentoAdjunto || null,
+    notas: pago.notas || null,
     created_at: pago.createdAt
   };
 
   const { data, error } = await supabase.from('pagos_clientes').insert([payload]).select();
   
-  if (error) throw new Error('Failed to create pago cliente');
+  if (error) throw new Error(`Failed to create pago cliente: ${error.message}`);
   
   const p = (data as any[])?.[0];
   return {
@@ -650,7 +654,7 @@ export const createPagoCliente = async (pago: PagoCliente): Promise<PagoCliente>
 
 export const deletePagoCliente = async (id: string): Promise<void> => {
   const { error } = await supabase.from('pagos_clientes').delete().eq('id', id);
-  if (error) throw new Error('Failed to delete pago cliente');
+  if (error) throw new Error(`Failed to delete pago cliente: ${error.message}`);
 };
 
 // ==================== EGRESOS FUTUROS ====================
@@ -700,8 +704,7 @@ export const createEgresoFuturo = async (egreso: EgresoFuturo): Promise<EgresoFu
   };
 
   const { data, error } = await supabase.from('egresos_futuros').insert([payload]).select();
-  
-  if (error) throw new Error('Failed to create egreso futuro');
+  if (error) throw new Error(`Failed to create egreso futuro: ${error.message}`);
   
   const e = (data as any[])?.[0];
   return {
@@ -736,7 +739,7 @@ export const updateEgresoFuturo = async (id: string, updates: Partial<EgresoFutu
     .eq('id', id)
     .select();
 
-  if (error) throw new Error('Failed to update egreso futuro');
+  if (error) throw new Error(`Failed to update egreso futuro: ${error.message}`);
   
   const e = (data as any[])?.[0];
   return {
@@ -755,11 +758,10 @@ export const updateEgresoFuturo = async (id: string, updates: Partial<EgresoFutu
 
 export const deleteEgresoFuturo = async (id: string): Promise<void> => {
   const { error } = await supabase.from('egresos_futuros').delete().eq('id', id);
-  if (error) throw new Error('Failed to delete egreso futuro');
+  if (error) throw new Error(`Failed to delete egreso futuro: ${error.message}`);
 };
 
 // ==================== LOTES ====================
-// ✅ VERSIÓN FINAL CON SNAKE_CASE CORRECTO
 
 export const getAllLotes = async (): Promise<Lote[]> => {
   try {
@@ -816,14 +818,8 @@ export const createLote = async (lote: Lote): Promise<Lote> => {
     updated_at: lote.updatedAt
   };
 
-  console.log('Creando lote con payload:', payload);
-
   const { data, error } = await supabase.from('lotes').insert([payload]).select();
-  
-  if (error) {
-    console.error('Error en createLote:', error);
-    throw new Error(`Failed to create lote: ${error.message}`);
-  }
+  if (error) throw new Error(`Failed to create lote: ${error.message}`);
   
   const l = (data as any[])?.[0];
   if (!l) throw new Error('No data returned from insert');
@@ -860,18 +856,13 @@ export const updateLote = async (id: string, updates: Partial<Lote>): Promise<Lo
   if (updates.columna !== undefined) payload.columna = updates.columna;
   payload.updated_at = new Date().toISOString();
 
-  console.log('Actualizando lote con payload:', payload);
-
   const { data, error } = await supabase
     .from('lotes')
     .update(payload)
     .eq('id', id)
     .select();
 
-  if (error) {
-    console.error('Error en updateLote:', error);
-    throw new Error(`Failed to update lote: ${error.message}`);
-  }
+  if (error) throw new Error(`Failed to update lote: ${error.message}`);
   
   const l = (data as any[])?.[0];
   if (!l) throw new Error('No data returned from update');
@@ -894,16 +885,11 @@ export const updateLote = async (id: string, updates: Partial<Lote>): Promise<Lo
 };
 
 export const deleteLote = async (id: string): Promise<void> => {
-  console.log('Eliminando lote:', id);
-
   const { error } = await supabase.from('lotes').delete().eq('id', id);
-  if (error) {
-    console.error('Error en deleteLote:', error);
-    throw new Error(`Failed to delete lote: ${error.message}`);
-  }
+  if (error) throw new Error(`Failed to delete lote: ${error.message}`);
 };
 
-// --- CSV Export (Frontend only) ---
+// --- CSV Export ---
 export const exportToCSV = (transactions: Transaction[]) => {
   const headers = ['ID', 'Fecha', 'Tipo', 'Categoría', 'Monto', 'Usuario', 'Descripción'];
   const rows = transactions.map(t => [
@@ -934,10 +920,7 @@ export const exportToCSV = (transactions: Transaction[]) => {
 
 // ==================== OBRAS ====================
 
-/**
- * Obtener todas las obras
- */
-export const getAllObras = async (): Promise<Obra[] | null> => {
+export const getAllObras = async (): Promise<any[] | null> => {
   try {
     const { data, error } = await supabase
       .from('obras')
@@ -955,10 +938,7 @@ export const getAllObras = async (): Promise<Obra[] | null> => {
   }
 };
 
-/**
- * Crear una nueva obra
- */
-export const createObra = async (obra: Omit<Obra, 'id' | 'createdAt' | 'updatedAt'>): Promise<Obra | null> => {
+export const createObra = async (obra: any): Promise<any | null> => {
   try {
     const { data, error } = await supabase
       .from('obras')
@@ -992,10 +972,7 @@ export const createObra = async (obra: Omit<Obra, 'id' | 'createdAt' | 'updatedA
   }
 };
 
-/**
- * Actualizar una obra
- */
-export const updateObra = async (id: string, updates: Partial<Obra>): Promise<Obra | null> => {
+export const updateObra = async (id: string, updates: any): Promise<any | null> => {
   try {
     const updateData: any = {};
 
@@ -1013,7 +990,6 @@ export const updateObra = async (id: string, updates: Partial<Obra>): Promise<Ob
     if (updates.ubicacion) updateData.ubicacion = updates.ubicacion;
     if (updates.responsable) updateData.responsable = updates.responsable;
     if (updates.estado) updateData.estado = updates.estado;
-
     updateData.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase
@@ -1034,16 +1010,9 @@ export const updateObra = async (id: string, updates: Partial<Obra>): Promise<Ob
   }
 };
 
-/**
- * Eliminar una obra
- */
 export const deleteObra = async (id: string): Promise<boolean> => {
   try {
-    const { error } = await supabase
-      .from('obras')
-      .delete()
-      .eq('id', id);
-
+    const { error } = await supabase.from('obras').delete().eq('id', id);
     if (error) {
       console.error('Error eliminando obra:', error);
       return false;
